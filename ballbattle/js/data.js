@@ -1,0 +1,78 @@
+// ---------------- 数据 ----------------
+const COLORS = [
+  { name: '离子青',  main: '#00e5ff', bright: '#8df6ff' },
+  { name: '镭射红',  main: '#ff2d55', bright: '#ff8fa8' },
+  { name: '脉冲紫',  main: '#a44dff', bright: '#d8aaff' },
+  { name: '辉光绿',  main: '#2dff8f', bright: '#9affd0' },
+  { name: '琥珀橙',  main: '#ffa02d', bright: '#ffd29a' },
+  { name: '电光蓝',  main: '#2f6bff', bright: '#9db8ff' },
+  { name: '霓虹粉',  main: '#ff4dd2', bright: '#ffb8ec' },
+  { name: '白金',    main: '#cfe4ff', bright: '#ffffff' },
+];
+
+// 装饰绘制函数签名: (ctx, orb)
+const DECORS = [
+  { id: 'ring',   name: '光环', desc: '旋转能量环',  draw: drawDecRing },
+  { id: 'trail',  name: '尾焰', desc: '光粒拖尾',    draw: null },
+  { id: 'spike',  name: '尖刺', desc: '撞击尖刺',    draw: drawDecSpike },
+  { id: 'stripe', name: '条纹', desc: '旋转纹路',    draw: drawDecStripe },
+  { id: 'hex',    name: '核心', desc: '六边核心',    draw: drawDecHex },
+  { id: 'cross',  name: '准星', desc: '战术准星',    draw: drawDecCross },
+];
+
+const ABILITIES = [
+  { id: 'pulse',   name: '能量脉冲', icon: '◉', cd: 4.0, desc: '环形冲击波 · 范围伤害', type: 'ranged' },
+  { id: 'shield',  name: '量子护盾', icon: '⬡', cd: 5.5, desc: '抵挡一次撞击伤害', type: 'melee' },
+  { id: 'phantom', name: '幻影分身', icon: '❖', cd: 6.0, desc: '召唤幻影冲撞敌人', type: 'ranged' },
+  { id: 'missile', name: '追踪飞弹', icon: '✛', cd: 5.0, desc: '双发智能追踪弹', type: 'ranged' },
+  { id: 'rush',    name: '狂暴突进', icon: '⚡', cd: 6.5, desc: '加速移动 · 撞击增伤', type: 'melee' },
+  { id: 'repair',  name: '纳米修复', icon: '✚', cd: 7.0, desc: '持续修复装甲', type: 'melee' },
+  { id: 'gravity', name: '引力阱', icon: '◎', cd: 15, desc: '中心黑洞引力场 · 扭曲轨迹', type: 'ranged' },
+  { id: 'portal',  name: '传送门', icon: '◈', cd: 8, desc: '对角传送门 · 瞬间换位', type: 'ranged' },
+  { id: 'chemist', name: '药剂师', icon: '✜', cd: 5, desc: '三色药水 · 伤害/回复/减速', type: 'ranged' },
+  { id: 'burn',    name: '灼烧', icon: '✸', cd: 6, desc: '灼烧传染 · 火星迸溅', type: 'melee' },
+  { id: 'vampire', name: '吸血鬼', icon: '☾', cd: 8, desc: '碰撞吸血吸身 · 90% 庇护', type: 'melee' },
+  { id: 'combo',   name: '连击', icon: '≫', cd: 10, desc: '越打越快 · 越快越痛', type: 'melee' },
+  { id: 'turret',  name: '固定炮台', icon: '▲', cd: 4, desc: '部署炮台 · 区域封锁', type: 'ranged' },
+  { id: 'split',   name: '分裂球', icon: '❂', cd: 10, desc: '碰撞分裂 · 接触融合', type: 'melee' },
+  { id: 'gunner',  name: '快枪手', icon: '⌖', cd: 6, desc: '8 发弹夹 · 四向待机锁定', type: 'ranged' },
+  { id: 'wuliang', name: '无量', icon: '☯', cd: 6, desc: '苍吸·赫斥·异色相合化芘', type: 'ranged' },
+  { id: 'slash',   name: '空间斩', icon: '▣', cd: 15, desc: '延时空间刃 · 低血速发', type: 'ranged' },
+  { id: 'idol',    name: '偶像', icon: '★', cd: 9, desc: '偶像领域 · 此消彼长', type: 'ranged' },
+  { id: 'anchor',  name: '切割球', icon: '⚓', cd: 8, desc: '撞墙留锚 · 拉设切割电缆', type: 'melee' },
+  { id: 'drone',   name: '浮游炮', icon: '✦', cd: 6, desc: '三浮游炮 · 充能激光', type: 'ranged' },
+  // —— V3 新能力 ——
+  { id: 'boomerang', name: '回旋镖', icon: '⟲', cd: 6, desc: '命中折返 · 收回重置 CD', type: 'ranged' },
+  { id: 'railgun', name: '轨道炮', icon: '≡', cd: 0.05, desc: '圆击/柱雨 · 独立自动发射', type: 'ranged' },
+  { id: 'frost',    name: '冰霜刺剑', icon: '❅', cd: 5.5, desc: '深度冻结 · 刺剑随失血扩张', type: 'ranged' },
+  { id: 'barrier',  name: '护盾墙', icon: '▧', cd: 8, desc: '弧形能量墙 · 反弹与拦截', type: 'melee' },
+  { id: 'nest',     name: '无人机巢', icon: '◫', cd: 10, desc: '可破坏巢穴 · 自爆无人机', type: 'ranged' },
+  { id: 'echo',     name: '回声', icon: '↩', cd: 9, desc: '记录位置血量 · 3s 后回溯', type: 'ranged' },
+  { id: 'sonic',    name: '音爆', icon: '≋', cd: 6, desc: '穿透声波 · 粒子散射', type: 'melee' },
+  { id: 'fang',     name: '兽牙', icon: '⌁', cd: 3, desc: '自动箭矢 · 命中缩短间隔', type: 'ranged' },
+  // —— V4 新能力 ——
+  { id: 'launcher', name: '发射台', icon: '⤴', cd: 3.5, desc: '弹射对方 · 速度翻倍冲撞', type: 'ranged' },
+  { id: 'tornado',  name: '龙卷风', icon: '🌀', cd: 8, desc: '旋风偏转轨迹 · 刮石伤人', type: 'ranged' },
+  { id: 'web',      name: '蛛网', icon: '⌘', cd: 7, desc: '预判撒网 · 减速且反弹减半', type: 'ranged' },
+  { id: 'volcano',  name: '火山', icon: '♨', cd: 10, desc: '定身喷发 · 扇形熔岩灼烧', type: 'ranged' },
+  { id: 'venom',    name: '剧毒', icon: '☣', cd: 6, desc: '毒牙叠层 · 越毒越痛', type: 'melee' },
+  { id: 'ghost',    name: '幽灵', icon: '◌', cd: 9, desc: '周期隐身 · 导弹无法锁定', type: 'ranged' },
+  { id: 'star',     name: '星灵', icon: '✧', cd: 8, desc: '星轨留痕 · 路过灼伤', type: 'ranged' },
+  // —— V5 新能力 ——
+  { id: 'tsunami',  name: '海啸', icon: '〰', cd: 4.5, desc: '横扫波浪 · 强推位移', type: 'ranged' },
+  { id: 'spore',    name: '孢子', icon: '🍄', cd: 9, desc: '孢子成菇 · 毒域封锁', type: 'ranged' },
+  { id: 'clone',    name: '替身', icon: '⧉', cd: 10, desc: '镜像替身 · 骗弹惑敌', type: 'ranged' },
+  { id: 'evolve',   name: '进化', icon: '🧬', cd: 8, desc: '撞击进化 · 愈战愈强', type: 'melee' },
+  { id: 'lance',    name: '骑枪', icon: '↯', cd: 9, desc: '指向冲刺 · 冲刺无敌', type: 'melee' },
+  // —— V8 新能力 ——
+  { id: 'curse',     name: '诅咒之钉', icon: '➳', cd: 7, desc: '巨钉贯飞 · 钉住敌人 · 撞墙燃咒火', type: 'ranged' },
+  { id: 'corrode',   name: '腐蚀', icon: '☢', cd: 2.5, desc: '腐蚀粒子浪潮 · 叠易伤叠减速', type: 'ranged' },
+  { id: 'coffin',    name: '棺椁', icon: '⚰', cd: 8, desc: '失血封锁区域 · 撞墙放黑白蝶', type: 'melee' },
+  { id: 'tech1',     name: '科技I', icon: '◬', cd: 3.5, desc: '撞墙留激光台 · 中速中伤', type: 'ranged' },
+  { id: 'tech2',     name: '科技II', icon: '⋔', cd: 3, desc: '撞墙留激光台 · 极速低伤', type: 'ranged' },
+  { id: 'techx',     name: '科技X', icon: '✳', cd: 10, desc: '六圈激光护体 · 半血转旋转光柱', type: 'ranged' },
+  { id: 'liquidbag', name: '液袋', icon: '◍', cd: 6, desc: '液袋护盾 · 击破永久增攻', type: 'melee' },
+  { id: 'pylon',     name: '电线杆', icon: '☇', cd: 5, desc: '无前摇落雷 · 定身易伤', type: 'melee' },
+  { id: 'bond',      name: '拘束', icon: '⛓', cd: 6, desc: '撞墙留锚 · 绳索伤敌 · 越锚越快', type: 'melee' },
+];
+const TYPE_LABEL = { melee: '近战 MELEE', ranged: '远程 RANGED' };
