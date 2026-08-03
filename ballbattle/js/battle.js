@@ -123,6 +123,7 @@ function moveOrb(o, dt, foe) {
     o.x = o.pinned.x; o.y = o.pinned.y;
     o.vx = o.pinned.vx; o.vy = o.pinned.vy;
     o.angle += dt * 2;
+    if (o.stunT > 0) o.stunT = Math.max(0, o.stunT - dt); // 被钉拖行期间眩晕计时照常流逝（释放后不残留）
     o.history.push({ x: o.x, y: o.y });
     const maxLenP = o.decor === 'trail' ? 30 : 12;
     if (o.history.length > maxLenP) o.history.splice(0, o.history.length - maxLenP);

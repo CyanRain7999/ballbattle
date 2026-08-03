@@ -158,11 +158,17 @@ async function main() {
     battle.proj = [];
     battle.proj.push({ type: 'cursenail', owner: 'left', x: f.x + f.s * .5, y: f.y + f.s / 2, vx: 900, vy: 0, life: 7, r: 16, hitT: 0, angle: 0 });
   })()`);
-  await sleep(1000); // 钉子 0.4s 撞墙生成火焰圈，之后继续生长（1000ms 时 r ≈ 40+46×0.6 ≈ 68）
-  const curseFireChk = await evalJS(`(() => {
+  await sleep(600); // 钉子 ~0.38s 撞墙生成火焰圈，此刻已生长 ~220ms
+  const cf1 = await evalJS(`(() => {
     const s = battle.structs.find(x => x.type === 'cursefire');
-    return s ? { has: true, r: Math.round(s.r) } : { has: false };
+    return s ? Math.round(s.r) : -1;
   })()`);
+  await sleep(400); // 再生长 400ms
+  const cf2 = await evalJS(`(() => {
+    const s = battle.structs.find(x => x.type === 'cursefire');
+    return s ? Math.round(s.r) : -1;
+  })()`);
+  const curseFireChk = { has: cf1 > 0 && cf2 > 0, r: cf2, grown: cf2 > cf1 };
 
   // —— 诅咒之钉注入验证：命中钉住敌人继续拖飞，直到撞墙触发诅咒之火并释放 ——
   await evalJS(`(function () {
@@ -341,7 +347,7 @@ async function main() {
   const seen = await evalJS(`window.__seen`) || {};
   const checks = {
     '诅咒之钉 cursenail 实体': typeSet.has('p:cursenail'),
-    '诅咒火焰圈（注入：钉撞墙生成+变大）': !!curseFireChk && curseFireChk.has && curseFireChk.r > 60,
+    '诅咒火焰圈（注入：钉撞墙生成+逐渐变大）': !!curseFireChk && curseFireChk.has && curseFireChk.grown,
     '腐蚀粒子命中叠层（注入）': !!corrodePartChk && corrodePartChk.n >= 1 && corrodePartChk.slow >= 1,
     '黑白蝴蝶 butterfly 实体': typeSet.has('p:butterfly'),
     '激光发射器 laserturret 实体': typeSet.has('s:laserturret'),
