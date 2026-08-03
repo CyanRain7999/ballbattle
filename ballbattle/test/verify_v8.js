@@ -164,23 +164,28 @@ async function main() {
     return s ? { has: true, r: Math.round(s.r) } : { has: false };
   })()`);
 
-  // —— 诅咒之钉注入验证：cursenail 命中 → 被钉住随钉飞行 ——
+  // —— 诅咒之钉注入验证：命中钉住敌人继续拖飞，直到撞墙触发诅咒之火并释放 ——
   await evalJS(`(function () {
     players = { left: { name: 'L', color: COLORS[0], decor: 'ring', ability: 'curse' }, right: { name: 'R', color: COLORS[1], decor: 'spike', ability: 'pulse' } }; startBattle();
     const f = fieldRect();
     battle.left.cd = -50; battle.left.maxCd = 999; battle.right.cd = -50; battle.right.maxCd = 999;
     battle.right.hp = 400; battle.right.invT = 0; battle.right.shieldT = 0;
     battle.structs = battle.structs.filter(s => s.type !== 'laserring' && s.type !== 'laserbeams');
-    battle.right.x = f.x + f.s * .7; battle.right.y = f.y + f.s / 2; battle.right.vx = 0; battle.right.vy = 0;
+    battle.right.x = f.x + f.s * .6; battle.right.y = f.y + f.s / 2; battle.right.vx = 0; battle.right.vy = 0;
     battle.left.x = f.x + f.s * .2; battle.left.y = f.y + f.s / 2; battle.left.vx = 0; battle.left.vy = 0;
     battle.proj = [];
     battle.proj.push({ type: 'cursenail', owner: 'left', x: f.x + f.s * .5, y: f.y + f.s / 2, vx: 900, vy: 0, life: 7, r: 16, hitT: 0, angle: 0 });
   })()`);
-  await sleep(400);
+  await sleep(130); // 0.08s 命中，此刻正在拖飞（距右墙 ~288px，0.32s 内未撞墙）
   const nailChk = await evalJS(`(() => ({
     pinned: !!battle.right.pinned,
     pinT: Math.round(battle.right.pinT * 10) / 10,
     speedSync: Math.round(battle.right.vx) >= 800 // 随钉子高速飞行
+  }))()`);
+  await sleep(400); // 拖到右墙 → 释放 + 诅咒火焰圈
+  const nailEndChk = await evalJS(`(() => ({
+    pinned: !!battle.right.pinned,
+    cursefire: battle.structs.some(s => s.type === 'cursefire')
   }))()`);
 
   // —— 科技X 半血注入验证：hp<50% 时 laserring → laserbeams ——
@@ -330,7 +335,8 @@ async function main() {
     '科技X 半血转旋转光柱（注入 hp40%）': techxHalfChk === 'laserbeams',
     '电线杆落雷无前摇（定身+易伤+伤害）': !!lightningChk && lightningChk.stun && lightningChk.vuln && lightningChk.dmg >= 14,
     '棺椁封锁区 coffinzone 实体': typeSet.has('s:coffinzone'),
-    '诅咒之钉命中钉住（注入）': !!nailChk && nailChk.pinned && nailChk.pinT > 0 && nailChk.speedSync,
+    '诅咒之钉命中钉住拖飞（注入）': !!nailChk && nailChk.pinned && nailChk.pinT > 0 && nailChk.speedSync,
+    '诅咒之钉撞墙释放并触发火焰（注入）': !!nailEndChk && !nailEndChk.pinned && nailEndChk.cursefire,
     '腐蚀易伤层 corrode 触发': !!seen.corrode,
     '腐蚀减速层 corrodeSlow 触发': !!seen.corrodeSlow,
     '电线杆易伤 vuln 触发': !!seen.vuln,

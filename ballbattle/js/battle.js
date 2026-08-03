@@ -1210,10 +1210,7 @@ function updateBattle(dt) {
       }
     }
     // —— V8 被动状态 ——
-      if (o.pinned) { // 被诅咒之钉钉住：到期解除
-        o.pinT -= dt;
-        if (o.pinT <= 0) { o.pinned = null; o.pinT = 0; }
-      }
+    // 诅咒之钉：被钉住状态由钉子生命周期管理（撞墙/寿命耗尽才释放），无超时
       if (o.corrodeT > 0) { o.corrodeT -= dt; if (o.corrodeT <= 0) o.corrodeN = 0; } // 腐蚀易伤层过期
       if (o.corrodeSlowT > 0) { o.corrodeSlowT -= dt; if (o.corrodeSlowT <= 0) o.corrodeSlowN = 0; } // 腐蚀减速层过期
       if (o.vulnT > 0) o.vulnT -= dt; // 电线杆易伤
@@ -1686,13 +1683,13 @@ function updateBattle(dt) {
       }
     }
     // —— V8 投射物 ——
-    if (p.type === 'cursenail') { // 诅咒之钉：极速巨钉，命中钉住敌人随钉飞行；撞墙燃起诅咒火焰圈
+    if (p.type === 'cursenail') { // 诅咒之钉：命中钉住敌人继续飞行（拖着敌人），直到撞墙触发诅咒之火
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.angle = (p.angle || 0) + dt * 4;
       if (Math.random() < .5) addFx({ type: 'spark', x: p.x, y: p.y, vx: rand(-6, 6), vy: rand(-6, 6), life: 0, maxLife: .2, size: 2, color: '#c07aff' });
       const owner = ownerOf(p.owner);
       const hitWall = p.x < F.x + p.r || p.x > F.x + F.s - p.r || p.y < F.y + p.r || p.y > F.y + F.s - p.r;
-      if (hitWall) { // 撞墙：释放被钉目标 + 生成逐渐变大的诅咒火焰圈
+      if (hitWall || p.life <= 0) { // 撞墙（或寿命耗尽兜底）：释放被钉目标 + 生成逐渐变大的诅咒火焰圈
         p.life = 0;
         for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13); }
         const wx = clamp(p.x, F.x + p.r, F.x + F.s - p.r), wy = clamp(p.y, F.y + p.r, F.y + F.s - p.r);
@@ -1700,13 +1697,13 @@ function updateBattle(dt) {
         addFx({ type: 'ring', x: wx, y: wy, r: 20, vr: 420, maxLife: .45, life: 0, color: '#c07aff', lw: 3.5 });
         addText(wx, wy - 36, '诅咒火焰', '#c07aff', 14);
         sfx('boom');
-      } else {
+      } else if (!p.hitFoe) { // 未钉人时探测敌人；命中后钉子继续飞行（不销毁），把敌人钉在钉子上拖向墙面
         for (const o of B.orbs) {
           if (o === owner || !o.alive) continue;
           if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
-            p.life = 0;
             if (o.invT <= 0) {
-              o.pinned = p; o.pinT = 3; // 钉住：随钉子一起飞行
+              p.hitFoe = true; // 防同一钉子每帧重复命中
+              o.pinned = p; o.pinT = 999; // 钉住直到钉子撞墙（无超时松开）
               addText(o.x, o.y - 44, '➳ 被钉住!', '#c07aff', 15);
               addRing(o.x, o.y, 50, '#c07aff', 2.5);
               sfx('curse');
