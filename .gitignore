@@ -1,0 +1,17 @@
+# 工具元数据（含本地路径，不上 GitHub）
+.reasonix/
+reasonix.toml
+.shots/
+
+# 临时产物
+node_modules/
+*.log
+_*.js
+_*.py
+_*.png
+shot-*.png
+tmp_*.js
+
+# 系统
+.DS_Store
+Thumbs.db
