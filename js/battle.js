@@ -18,7 +18,7 @@ function makeOrb(side, cfg) {
     // V6 强化状态
     launchT: 0, webVulnT: 0,
     // V8 新能力状态
-    pinned: null, pinT: 0, pinDmgT: 0, // 诅咒之钉：被钉住的钉子引用/剩余时间
+    pinned: null, pinT: 0, // 诅咒之钉：被钉住的钉子引用（撞墙才释放，pinT 为兼容保留）
     corrodeN: 0, corrodeT: 0, corrodeSlowN: 0, corrodeSlowT: 0, // 腐蚀：易伤层数 / 减速层数
     coffinStage: 0, butterflyCd: 0, // 棺椁：已触发阈值档位 / 蝴蝶生成冷却
     techWall: null, // 科技I/II：待放置激光台的墙面位置
@@ -118,13 +118,7 @@ function startBattle() {
 
 function moveOrb(o, dt, foe) {
   const F = fieldRect();
-  // 定身（火山喷发）：原地不动，不位移不反弹
-  if (o.stunT > 0) {
-    o.stunT -= dt;
-    o.angle += dt * 1.2;
-    return;
-  }
-  // V8 诅咒之钉：被钉住时位置锁定，随钉子一起飞行（速度同步钉子）
+  // V8 诅咒之钉：被钉住时位置锁定，随钉子一起飞行（速度同步钉子）——优先于定身，避免眩晕期间原地滞留、结束瞬间瞬移
   if (o.pinned) {
     o.x = o.pinned.x; o.y = o.pinned.y;
     o.vx = o.pinned.vx; o.vy = o.pinned.vy;
@@ -132,6 +126,12 @@ function moveOrb(o, dt, foe) {
     o.history.push({ x: o.x, y: o.y });
     const maxLenP = o.decor === 'trail' ? 30 : 12;
     if (o.history.length > maxLenP) o.history.splice(0, o.history.length - maxLenP);
+    return;
+  }
+  // 定身（火山喷发）：原地不动，不位移不反弹
+  if (o.stunT > 0) {
+    o.stunT -= dt;
+    o.angle += dt * 1.2;
     return;
   }
   // 纯直线运动：完全随机直线飞行，只有撞击 / 技能命中 / 边界反弹会改变路径（零主动干预）
@@ -844,7 +844,7 @@ function fireAbility(o) {
     // —— V8 新能力 ——
     case 'curse': { // 诅咒之钉：投掷巨大高速钉子，命中钉住敌人随钉飞行；撞墙燃起逐渐变大的诅咒火焰圈
       const a = Math.atan2(foe.y - o.y, foe.x - o.x);
-      battle.proj.push({ type: 'cursenail', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 840, vy: Math.sin(a) * 840, life: 7, r: 16, hitT: 0 });
+      battle.proj.push({ type: 'cursenail', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 840, vy: Math.sin(a) * 840, life: 7, r: 16, hitT: 0, hitFoe: false, angle: 0 });
       addRing(o.x, o.y, 55, '#c07aff', 2.5);
       addFx({ type: 'ring', x: o.x, y: o.y, r: 16, vr: 460, maxLife: .4, life: 0, color: '#c07aff', lw: 3 });
       for (let i = 0; i < 10; i++) {
@@ -1698,8 +1698,9 @@ function updateBattle(dt) {
         addText(wx, wy - 36, '诅咒火焰', '#c07aff', 14);
         sfx('boom');
       } else if (!p.hitFoe) { // 未钉人时探测敌人；命中后钉子继续飞行（不销毁），把敌人钉在钉子上拖向墙面
+        // 命中零伤害（纯控制）：伤害由撞墙后的诅咒火焰圈结算
         for (const o of B.orbs) {
-          if (o === owner || !o.alive) continue;
+          if (o === owner || !o.alive || o.pinned) continue; // 已钉住的球不被第二颗钉覆盖
           if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
             if (o.invT <= 0) {
               p.hitFoe = true; // 防同一钉子每帧重复命中

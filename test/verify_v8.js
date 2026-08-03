@@ -158,7 +158,7 @@ async function main() {
     battle.proj = [];
     battle.proj.push({ type: 'cursenail', owner: 'left', x: f.x + f.s * .5, y: f.y + f.s / 2, vx: 900, vy: 0, life: 7, r: 16, hitT: 0, angle: 0 });
   })()`);
-  await sleep(450);
+  await sleep(1000); // 钉子 0.4s 撞墙生成火焰圈，之后继续生长（1000ms 时 r ≈ 40+46×0.6 ≈ 68）
   const curseFireChk = await evalJS(`(() => {
     const s = battle.structs.find(x => x.type === 'cursefire');
     return s ? { has: true, r: Math.round(s.r) } : { has: false };
@@ -175,12 +175,14 @@ async function main() {
     battle.left.x = f.x + f.s * .2; battle.left.y = f.y + f.s / 2; battle.left.vx = 0; battle.left.vy = 0;
     battle.proj = [];
     battle.proj.push({ type: 'cursenail', owner: 'left', x: f.x + f.s * .5, y: f.y + f.s / 2, vx: 900, vy: 0, life: 7, r: 16, hitT: 0, angle: 0 });
+    window.__nailHp0 = battle.right.hp;
   })()`);
   await sleep(130); // 0.08s 命中，此刻正在拖飞（距右墙 ~288px，0.32s 内未撞墙）
   const nailChk = await evalJS(`(() => ({
     pinned: !!battle.right.pinned,
     pinT: Math.round(battle.right.pinT * 10) / 10,
-    speedSync: Math.round(battle.right.vx) >= 800 // 随钉子高速飞行
+    speedSync: Math.round(battle.right.vx) >= 800, // 随钉子高速飞行
+    noHitDmg: battle.right.hp === window.__nailHp0 // 命中零伤害（纯控制，伤害由撞墙火焰结算）
   }))()`);
   await sleep(400); // 拖到右墙 → 释放 + 诅咒火焰圈
   const nailEndChk = await evalJS(`(() => ({
@@ -200,6 +202,19 @@ async function main() {
     const s = battle.structs.find(x => x.type === 'laserring' || x.type === 'laserbeams');
     return s ? s.type : null;
   })()`);
+
+  // —— 棺椁失血封锁注入验证：失去 25% → 触发 10%/20% 两档并封锁无球四分之一区 ——
+  await evalJS(`(function () {
+    players = { left: { name: 'L', color: COLORS[0], decor: 'ring', ability: 'coffin' }, right: { name: 'R', color: COLORS[1], decor: 'spike', ability: 'pulse' } }; startBattle();
+    battle.left.cd = -50; battle.left.maxCd = 999; battle.right.cd = -50; battle.right.maxCd = 999;
+    battle.left.hp = battle.left.maxHp * .75; // 失去 25%
+    battle.left.coffinStage = 0;
+  })()`);
+  await sleep(400);
+  const coffinChk = await evalJS(`(() => ({
+    stage: battle.left.coffinStage,
+    zones: battle.structs.filter(s => s.type === 'coffinzone').length
+  }))()`);
 
   // —— 腐蚀粒子注入验证：corrodepart 命中 → 叠易伤层 + 叠减速层 ——
   await evalJS(`(function () {
@@ -326,7 +341,7 @@ async function main() {
   const seen = await evalJS(`window.__seen`) || {};
   const checks = {
     '诅咒之钉 cursenail 实体': typeSet.has('p:cursenail'),
-    '诅咒火焰圈（注入：钉撞墙生成+变大）': !!curseFireChk && curseFireChk.has && curseFireChk.r >= 40,
+    '诅咒火焰圈（注入：钉撞墙生成+变大）': !!curseFireChk && curseFireChk.has && curseFireChk.r > 60,
     '腐蚀粒子命中叠层（注入）': !!corrodePartChk && corrodePartChk.n >= 1 && corrodePartChk.slow >= 1,
     '黑白蝴蝶 butterfly 实体': typeSet.has('p:butterfly'),
     '激光发射器 laserturret 实体': typeSet.has('s:laserturret'),
@@ -334,8 +349,8 @@ async function main() {
     '科技X 激光环 laserring 实体': typeSet.has('s:laserring'),
     '科技X 半血转旋转光柱（注入 hp40%）': techxHalfChk === 'laserbeams',
     '电线杆落雷无前摇（定身+易伤+伤害）': !!lightningChk && lightningChk.stun && lightningChk.vuln && lightningChk.dmg >= 14,
-    '棺椁封锁区 coffinzone 实体': typeSet.has('s:coffinzone'),
-    '诅咒之钉命中钉住拖飞（注入）': !!nailChk && nailChk.pinned && nailChk.pinT > 0 && nailChk.speedSync,
+    '棺椁封锁区 coffinzone 实体': !!coffinChk && coffinChk.zones >= 1,
+    '诅咒之钉命中钉住拖飞（注入）': !!nailChk && nailChk.pinned && nailChk.pinT > 0 && nailChk.speedSync && nailChk.noHitDmg,
     '诅咒之钉撞墙释放并触发火焰（注入）': !!nailEndChk && !nailEndChk.pinned && nailEndChk.cursefire,
     '腐蚀易伤层 corrode 触发': !!seen.corrode,
     '腐蚀减速层 corrodeSlow 触发': !!seen.corrodeSlow,
@@ -343,7 +358,7 @@ async function main() {
     '定身 stun 触发（落雷）': !!seen.stun,
     '液袋 liquid 触发': !!seen.liquid,
     '液袋击破增攻 atkBonus 触发': !!seen.atkBonus,
-    '棺椁失血封锁 coffinStage 触发': !!seen.coffinStage,
+    '棺椁失血封锁 coffinStage 触发（注入 hp75%）': !!coffinChk && coffinChk.stage >= 2,
     '拘束锚点 bondPts 触发': !!seen.bondPts,
     '科技X 常驻 techx 触发': !!seen.techx,
     '激光台同时存在上限 16（实测 ≤16）': (seen.turretCount || 0) <= 16,
