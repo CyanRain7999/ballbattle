@@ -32,12 +32,24 @@ function statusOf(o) {
   if (o.ability === 'techx') s.push(o.hp / o.maxHp < .5 ? '✳ 光柱' : '✳ 护环');
   return s.join(' ');
 }
+// 名字下方的小球本体预览：用 drawOrb 实时绘制颜色/装饰/底纹，
+// 状态变化（隐身半透明、护盾、狂暴、闪光、装饰旋转）同步可见，方便一眼对上号
+function drawHudOrb(side) {
+  const cv = $('#hud-orb-' + side);
+  if (!cv) return;
+  const g = cv.getContext('2d');
+  const o = ownerOf(side);
+  if (!o) return;
+  g.clearRect(0, 0, 64, 64);
+  drawOrb(g, { ...o, x: 32, y: 32, r: 22, history: null }, battle.time); // history 置空：预览不画移动尾迹
+}
 function updateHUD() {
   const B = battle;
   for (const o of B.orbs) {
     const s = o.side;
     const hpEl = $('#hp-' + s);
     if (!hpEl) continue; // 防御：元素缺失（重建中）
+    drawHudOrb(s); // 每帧刷新小球本体预览（含状态动画）
     const hpPct = Math.max(0, o.hp / o.maxHp * 100);
     hpEl.style.width = hpPct + '%';
     $('#hpnum-' + s).textContent = Math.round(hpPct) + '%';

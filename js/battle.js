@@ -52,6 +52,7 @@ function buildHUD() {
     el.id = 'hud-side-' + o.side;
     el.innerHTML = `
       <div class="hud-name" id="hud-name-${o.side}">PLAYER</div>
+      <canvas class="hud-orb" id="hud-orb-${o.side}" width="64" height="64"></canvas>
       <div class="hud-type" id="hud-type-${o.side}">近战 MELEE</div>
       <div class="hpbar"><div class="hpfill" id="hp-${o.side}"></div><div class="hpnum" id="hpnum-${o.side}">100%</div></div>
       <div class="hud-job" id="hud-job-${o.side}"></div>

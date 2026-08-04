@@ -202,6 +202,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;
 .hud-side.bl{bottom:74px;left:34px}
 .hud-side.br{bottom:74px;right:34px;align-items:flex-end;text-align:right}
 .hud-name{font-size:15px;letter-spacing:.18em;font-family:Consolas,monospace;font-weight:700;text-shadow:0 0 10px currentColor}
+.hud-orb{width:64px;height:64px;flex:none;margin:1px 0;filter:drop-shadow(0 0 8px rgba(0,229,255,.18))}
 .hud-type{font-size:10px;letter-spacing:.28em;font-family:Consolas,monospace;color:var(--dim);margin-top:2px}
 .hud-job{font-size:13px;letter-spacing:.22em;font-family:Consolas,monospace;font-weight:700;text-shadow:0 0 8px currentColor;margin-top:2px}
 .hpbar{width:100%;height:13px;border:1px solid #1e3a5c;background:#04101e;position:relative;overflow:hidden}
