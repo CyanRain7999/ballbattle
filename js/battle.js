@@ -200,6 +200,24 @@ function moveOrb(o, dt, foe) {
   if (o.history.length > maxLen) o.history.splice(0, o.history.length - maxLen);
 }
 
+// 释放被钉目标（诅咒之钉）：清除 pinned 并恢复移动，返回被释放的球列表。
+// 被钉期间 moveOrb 把球速度同步为钉子速度；墙钉速度为 0，释放后
+// moveOrb 的巡航回归（只缩放非零速度）无法从静止恢复方向 → 必须重新赋予速度
+function releasePinned(p) {
+  const out = [];
+  for (const o of battle.orbs) {
+    if (o.pinned !== p) continue;
+    o.pinned = null; o.pinT = 0;
+    if (Math.hypot(o.vx, o.vy) < 1) {
+      const a = Math.random() * TAU;
+      const sp = o.stats.cruise * BALANCE.global.speedMult;
+      o.vx = Math.cos(a) * sp; o.vy = Math.sin(a) * sp;
+    }
+    out.push(o);
+  }
+  return out;
+}
+
 // DoT/领域/陷阱等直减血伤害的倍率：与 hitOrb 的技能伤害乘区完全一致
 // （全局基础 × 施加者总倍率 × 全局技能 × 施加者技能）
 function srcDmgMult(src) {
@@ -1730,8 +1748,7 @@ function updateBattle(dt) {
       if (p.stuck) { // 已钉入墙体：位置固定，存续到期后拔出释放被钉目标
         p.angle = (p.angle || 0) + dt * 2;
         if (p.life <= 0) {
-          for (const o of B.orbs) if (o.pinned === p) {
-            o.pinned = null; o.pinT = 0;
+          for (const o of releasePinned(p)) {
             addText(o.x, o.y - 44, '钉子拔出', '#cfe0ff', 14);
             addSparks(o.x, o.y, 6, '#c07aff');
           }
@@ -1754,14 +1771,14 @@ function updateBattle(dt) {
           sfx('clash');
         } else {
           p.life = 0;
-          for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13); }
+          for (const o of releasePinned(p)) addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13);
         }
         B.structs.push({ type: 'cursefire', owner: p.owner, x: wx, y: wy, r: 40, life: 3.2, hitT: 0 });
         addFx({ type: 'ring', x: wx, y: wy, r: 20, vr: 420, maxLife: .45, life: 0, color: '#c07aff', lw: 3.5 });
         addText(wx, wy - 36, '诅咒火焰', '#c07aff', 14);
         sfx('boom');
       } else if (p.life <= 0) { // 未撞墙寿命耗尽（兜底）：释放被钉目标
-        for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子脱落', '#cfe0ff', 13); }
+        for (const o of releasePinned(p)) addText(o.x, o.y - 40, '钉子脱落', '#cfe0ff', 13);
       } else if (!p.hitFoe) { // 未钉人时探测敌人；命中后钉子继续飞行（不销毁），把敌人钉在钉子上拖向墙面
         // 命中零伤害（纯控制）：伤害由撞墙后的诅咒火焰圈结算
         for (const o of B.orbs) {
