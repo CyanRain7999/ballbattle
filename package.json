@@ -7,6 +7,11 @@
     "test": "node test/smoke.js",
     "test:v4": "node test/verify_v4.js",
     "test:v5": "node test/verify_v5.js",
-    "test:v8": "node test/verify_v8.js"
+    "test:v8": "node test/verify_v8.js",
+    "test:editor": "node test/check_editor.js",
+    "test:e2e": "node test/check_e2e.js",
+    "test:sim": "node test/check_sim.js",
+    "test:migrate": "node test/check_migrate.js",
+    "sim": "node sim/simulate.js"
   }
 }

@@ -1,14 +1,21 @@
 // 球斗竞技场 PWA Service Worker —— 离线缓存
 // 注意：仅在 http(s) 环境下注册生效；file:// 双击打开时浏览器不启用 SW，游戏照常运行
-// v2：拆分后新增 css/style.css 与 js/ 十模块预缓存（首次安装即离线可用）
-const CACHE = 'orb-arena-v2';
+// v4：新增数值编辑器与模拟器页面预缓存
+const CACHE = 'orb-arena-v4';
 const ASSETS = [
   './',
   './index.html',
+  './editor.html',
+  './sim.html',
   './css/style.css',
+  './css/editor.css',
+  './css/sim.css',
   './js/core.js',
   './js/draw.js',
   './js/data.js',
+  './js/balance.js',
+  './js/editor.js',
+  './js/sim.js',
   './js/audio.js',
   './js/effects.js',
   './js/select.js',

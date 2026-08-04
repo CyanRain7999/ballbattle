@@ -90,10 +90,12 @@ function buildPanels() {
       <div class="vs">VS</div>
       <div class="vs-line"></div>
       <button class="btn vs-btn" id="btn-random">⚄ 随机配置</button>
+      <button class="btn vs-btn" id="btn-balance">⚙ 数值</button>
       <button class="btn primary vs-btn" id="btn-start">▶ 启动战斗</button>`;
     body.insertBefore(vs, body.children[1]);
     $('#btn-random').onclick = randomizeAll;
     $('#btn-start').onclick = startGame;
+    $('#btn-balance').onclick = () => location.href = 'editor.html'; // 数值编辑器（buildPanels 重建后重新绑定）
   }
   $('#multi-actions').style.display = multi ? 'flex' : 'none';
   document.querySelectorAll('#mode-switch .mode-btn').forEach(b => b.classList.toggle('sel', +b.dataset.mode === gameMode));

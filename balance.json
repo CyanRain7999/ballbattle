@@ -1,0 +1,503 @@
+{
+  "global": {
+    "dmgMult": 1.5,
+    "skillMult": 1,
+    "collideMult": 1,
+    "healMult": 1,
+    "speedMult": 1,
+    "cdMult": 1,
+    "maxTime": 120
+  },
+  "abilities": {
+    "pulse": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 318.27,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.9409
+    },
+    "shield": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2955969390869324,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "phantom": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 368.962159627461,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.8079828447811299
+    },
+    "missile": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.3437791303497497,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "rush": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2989478483626802,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "repair": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "gravity": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9320999999999997,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "portal": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.6912053631849051,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "chemist": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2777531299998799,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "burn": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.39,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "vampire": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.6665662903841497,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "combo": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2823589374447564,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "turret": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.293993278441261,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "split": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.39,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "gunner": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.5235724416755132,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "wuliang": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.275424500625791,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "slash": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.3151918984428583,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "idol": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.1264883774776375,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "anchor": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 291,
+      "dmgMult": 0.4,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1.03
+    },
+    "drone": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.48826745491179946,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "boomerang": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.3818150663547333,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "railgun": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2505771580246714,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "frost": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.39,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "barrier": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2445647472039776,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "nest": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9320999999999997,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "echo": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.33,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "sonic": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.4512404908110168,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "fang": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9320999999999997,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "launcher": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.5416363636490866,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "tornado": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9320999999999997,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "web": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 368.962159627461,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.8079828447811299
+    },
+    "volcano": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 337.652643,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.8852928099999999
+    },
+    "venom": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.5038581313874714,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "ghost": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 318.27,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.9409
+    },
+    "star": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.2445647472039776,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "tsunami": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9320999999999997,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "spore": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.9098303215156123,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "clone": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 318.27,
+      "dmgMult": 2.5,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 0.9409
+    },
+    "evolve": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.7796875507755308,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "lance": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.33,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "curse": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "corrode": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "coffin": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1.33,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "tech1": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 242.39485343433893,
+      "dmgMult": 0.4,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1.2298738654248702
+    },
+    "tech2": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 242.39485343433893,
+      "dmgMult": 0.4,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1.2298738654248702
+    },
+    "techx": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.8351936579126331,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "liquidbag": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 291,
+      "dmgMult": 0.4,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1.03
+    },
+    "pylon": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 1,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    },
+    "bond": {
+      "maxHp": 400,
+      "r": 50,
+      "cruise": 300,
+      "dmgMult": 0.6124228871070061,
+      "skillMult": 1,
+      "collideMult": 1,
+      "healMult": 1,
+      "cdMult": 1
+    }
+  }
+}

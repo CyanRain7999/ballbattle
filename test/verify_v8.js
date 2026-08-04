@@ -190,10 +190,17 @@ async function main() {
     speedSync: Math.round(battle.right.vx) >= 800, // 随钉子高速飞行
     noHitDmg: battle.right.hp === window.__nailHp0 // 命中零伤害（纯控制，伤害由撞墙火焰结算）
   }))()`);
-  await sleep(400); // 拖到右墙 → 释放 + 诅咒火焰圈
+  await sleep(400); // 拖到右墙 → 钉子钉入墙体（敌人继续被钉住）+ 诅咒火焰圈
   const nailEndChk = await evalJS(`(() => ({
     pinned: !!battle.right.pinned,
+    stuck: (battle.proj.find(p => p.type === 'cursenail') || {}).stuck === true,
+    nailX: (battle.proj.find(p => p.type === 'cursenail') || {}).x ?? -1,
     cursefire: battle.structs.some(s => s.type === 'cursefire')
+  }))()`);
+  await sleep(3600); // 墙钉存续 3.2s 到期 → 拔出钉子释放敌人
+  const nailReleaseChk = await evalJS(`(() => ({
+    pinned: !!battle.right.pinned,
+    nailGone: !battle.proj.some(p => p.type === 'cursenail' && p.stuck)
   }))()`);
 
   // —— 科技X 半血注入验证：hp<50% 时 laserring → laserbeams ——
@@ -221,6 +228,28 @@ async function main() {
     stage: battle.left.coffinStage,
     zones: battle.structs.filter(s => s.type === 'coffinzone').length
   }))()`);
+
+  // —— 棺椁三档封锁注入验证：随失血渐进触发三档 → 3 块互异象限永久封锁（敌人活动范围只剩 1/4）——
+  await evalJS(`(function () {
+    players = { left: { name: 'L', color: COLORS[0], decor: 'ring', ability: 'coffin' }, right: { name: 'R', color: COLORS[1], decor: 'spike', ability: 'pulse' } }; startBattle();
+    battle.left.cd = -50; battle.left.maxCd = 999; battle.right.cd = -50; battle.right.maxCd = 999;
+    battle.left.coffinStage = 0;
+    battle.left.invT = 999; // 注入期间无敌：防止 right 伤害干扰失血阈值
+    battle.left.hp = battle.left.maxHp * .85; // 失血 15% → 触发第 1 档
+  })()`);
+  await sleep(200);
+  const cfZ1 = await evalJS(`battle.structs.filter(s => s.type === 'coffinzone').length`);
+  await evalJS(`battle.left.hp = battle.left.maxHp * .70;`); // 失血 30% → 第 2 档
+  await sleep(200);
+  const cfZ2 = await evalJS(`battle.structs.filter(s => s.type === 'coffinzone').length`);
+  await evalJS(`battle.left.hp = battle.left.maxHp * .55;`); // 失血 45% → 第 3 档
+  await sleep(400);
+  const coffinFullChk = await evalJS(`(() => {
+    const zs = battle.structs.filter(s => s.type === 'coffinzone');
+    const keys = zs.map(z => z.x + ',' + z.y);
+    const unique = new Set(keys).size === zs.length;
+    return { n: zs.length, unique, permanent: zs.every(z => z.life === undefined) };
+  })()`);
 
   // —— 腐蚀粒子注入验证：corrodepart 命中 → 叠易伤层 + 叠减速层 ——
   await evalJS(`(function () {
@@ -356,8 +385,12 @@ async function main() {
     '科技X 半血转旋转光柱（注入 hp40%）': techxHalfChk === 'laserbeams',
     '电线杆落雷无前摇（定身+易伤+伤害）': !!lightningChk && lightningChk.stun && lightningChk.vuln && lightningChk.dmg >= 14,
     '棺椁封锁区 coffinzone 实体': !!coffinChk && coffinChk.zones >= 1,
+    '棺椁三档渐进触发（档1→1块 档2→2块 档3→3块）': cfZ1 === 1 && cfZ2 === 2 && !!coffinFullChk && coffinFullChk.n === 3,
+    '棺椁三档封锁互异象限（活动范围剩 1/4）': !!coffinFullChk && coffinFullChk.unique,
+    '棺椁封锁区永久存在（无 life 计时）': !!coffinFullChk && coffinFullChk.permanent,
     '诅咒之钉命中钉住拖飞（注入）': !!nailChk && nailChk.pinned && nailChk.pinT > 0 && nailChk.speedSync && nailChk.noHitDmg,
-    '诅咒之钉撞墙释放并触发火焰（注入）': !!nailEndChk && !nailEndChk.pinned && nailEndChk.cursefire,
+    '诅咒之钉撞墙钉入墙体继续钉住并燃火（注入）': !!nailEndChk && nailEndChk.pinned && nailEndChk.stuck && nailEndChk.cursefire,
+    '诅咒之钉墙钉存续到期后拔出释放（注入）': !!nailReleaseChk && !nailReleaseChk.pinned && nailReleaseChk.nailGone,
     '腐蚀易伤层 corrode 触发': !!seen.corrode,
     '腐蚀减速层 corrodeSlow 触发': !!seen.corrodeSlow,
     '电线杆易伤 vuln 触发': !!seen.vuln,

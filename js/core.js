@@ -30,7 +30,7 @@ function showScreen(name) {
 
 // ---------------- 战斗 ----------------
 const battleCanvas = $('#battle-canvas');
-const bctx = battleCanvas.getContext('2d');
+const bctx = battleCanvas ? battleCanvas.getContext('2d') : null; // 编辑器页无该元素时降级
 
 // ---------------- 多球辅助（V8：支持 2/3/4 球） ----------------
 function ownerOf(side) { return battle.orbs.find(o => o.side === side); }

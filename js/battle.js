@@ -1,10 +1,14 @@
 function makeOrb(side, cfg) {
   const ab = abOf(cfg.ability);
+  // 数值配置层：按球种（能力）取数值——所有使用该能力的球共用一套配置；
+  // 模拟器可传 cfg.stats 显式覆盖
+  const st = cfg.stats ? orbStats(cfg.ability, cfg.stats) : orbStats(cfg.ability);
   return {
     side, name: cfg.name, color: cfg.color, decor: cfg.decor, ability: cfg.ability,
-    x: 0, y: 0, vx: 0, vy: 0, r: 50,
-    hp: 400, maxHp: 400,
-    cd: ab.cd * .55, maxCd: ab.cd,
+    x: 0, y: 0, vx: 0, vy: 0, r: st.r,
+    hp: st.maxHp, maxHp: st.maxHp,
+    maxCd: ab.cd * st.cdMult * BALANCE.global.cdMult, cd: ab.cd * .55 * st.cdMult * BALANCE.global.cdMult,
+    stats: st,
     flash: 0, shieldT: 0, rushT: 0, regenT: 0, invT: 0,
     // 新能力状态
     burnT: 0, slowT: 0, slowPct: 0, sealT: 0,
@@ -79,12 +83,13 @@ function startBattle() {
     const o = makeOrb(i === 0 ? 'left' : i === 1 ? 'right' : 'p' + i, cfg);
     orbs.push(o);
   });
-  const sp = 300;
+  // 开局发射速度：跟随该球巡航速度配置（原固定 300）
   for (let i = 0; i < n; i++) {
     const o = orbs[i];
     const ang0 = i / n * TAU - Math.PI / 2; // 环形均布（从顶部开始）
     const cx = F.x + F.s / 2, cy = F.y + F.s / 2;
     const rr = F.s * (n === 2 ? .26 : .3);
+    const sp = o.stats.cruise * BALANCE.global.speedMult;
     o.x = cx + Math.cos(ang0) * rr;
     o.y = cy + Math.sin(ang0) * rr;
     // 外切方向飞行：朝外侧半球（避免开局对冲），随机 ±50°
@@ -152,7 +157,6 @@ function moveOrb(o, dt, foe) {
     if (o.ability === 'anchor') o.wallHit = { x: o.x, y: o.y };
     if (o.ability === 'tech1' || o.ability === 'tech2') o.techWall = { x: o.x, y: o.y };
     if (o.ability === 'bond') o.bondWall = { x: o.x, y: o.y };
-    if (o.ability === 'coffin') o.butterflyWall = { x: o.x, y: o.y };
   };
   const launchBounce = (o) => { // 弹射撞墙：受 2 次近战撞击伤害（发射台强化）
     if (o.launchT > 0) {
@@ -170,7 +174,7 @@ function moveOrb(o, dt, foe) {
   // 巡航速度回归：速度自然衰减回类型巡航速度（狂暴突进 > 狂暴 > 连击层数 > 拘束锚点 > 远程；被撞后逃脱加速）
   const comboSpd = (o.ability === 'combo' && o.comboN > 0) ? (1 + o.comboN * .045 * (o.comboX > 0 ? 2 : 1)) : 1;
   const bondSpd = (o.ability === 'bond' && o.bondPts.length > 0) ? (1 + o.bondPts.length * .08) : 1; // 拘束：锚点越多越快
-  const cruise = 300 * (o.rushT > 0 ? 2.2 : 1) * comboSpd * bondSpd;
+  const cruise = o.stats.cruise * BALANCE.global.speedMult * (o.rushT > 0 ? 2.2 : 1) * comboSpd * bondSpd;
   const spd = Math.hypot(o.vx, o.vy);
   const ns = spd + (cruise - spd) * Math.min(1, dt * 1.5);
   if (spd > .001) { o.vx = o.vx / spd * ns; o.vy = o.vy / spd * ns; }
@@ -196,6 +200,13 @@ function moveOrb(o, dt, foe) {
   if (o.history.length > maxLen) o.history.splice(0, o.history.length - maxLen);
 }
 
+// DoT/领域/陷阱等直减血伤害的倍率：与 hitOrb 的技能伤害乘区完全一致
+// （全局基础 × 施加者总倍率 × 全局技能 × 施加者技能）
+function srcDmgMult(src) {
+  const m = src && src.stats ? src.stats : null;
+  return BALANCE.global.dmgMult * (m ? m.dmgMult : 1) * BALANCE.global.skillMult * (m ? m.skillMult : 1);
+}
+
 function hitOrb(target, dmg, src, silent, isCollision) {
   if (battle.over) return;
   if (target.invT > 0) { // 无敌（传送门跃迁 2s）
@@ -215,7 +226,12 @@ function hitOrb(target, dmg, src, silent, isCollision) {
     }
     return;
   }
-  dmg *= 1.5; // 全局伤害 +50%
+  // 伤害倍率：全局基础 × 攻击方总倍率 ×（碰撞/技能分项：全局 × 攻击方）
+  const srcM = src && src.stats ? src.stats : null;
+  dmg *= BALANCE.global.dmgMult * (srcM ? srcM.dmgMult : 1)
+      * (isCollision
+          ? BALANCE.global.collideMult * (srcM ? srcM.collideMult : 1)
+          : BALANCE.global.skillMult * (srcM ? srcM.skillMult : 1));
   // 吸血鬼吸身期 90% 庇护：严格 10% 承伤，全部易伤/减伤乘区不叠加（互斥优先）
   if (battle.vamp && battle.vamp.t > 0 && target === battle.vamp.src) {
     dmg *= .1;
@@ -304,11 +320,11 @@ function collide(a, b) {
   if (a.rushT > 0) { b.slowT = Math.max(b.slowT, .8); b.slowPct = .35; addText(b.x, b.y - 34, '震击减速', '#ff8090', 12); }
   if (b.rushT > 0) { a.slowT = Math.max(a.slowT, .8); a.slowPct = .35; addText(a.x, a.y - 34, '震击减速', '#ff8090', 12); }
   // —— 能力被动效果（撞击触发）——
-  if (a.ability === 'burn') b.burnT = Math.max(b.burnT, 5);
-  if (b.ability === 'burn') a.burnT = Math.max(a.burnT, 5);
+  if (a.ability === 'burn') { b.burnT = Math.max(b.burnT, 5); b.burnSrc = a.side; } // burnSrc：记录点燃者（DoT 按施加者技能倍率结算）
+  if (b.ability === 'burn') { a.burnT = Math.max(a.burnT, 5); a.burnSrc = b.side; }
   // 剧毒：主动撞击方给对方叠毒层（上限 5，毒时间 8s）
-  if (a.ability === 'venom') { b.venomN = Math.min(5, b.venomN + 1); b.venomT = 8; addText(b.x, b.y - 52, '☣ 毒×' + b.venomN, '#9fe870', 13); }
-  if (b.ability === 'venom') { a.venomN = Math.min(5, a.venomN + 1); a.venomT = 8; addText(a.x, a.y - 52, '☣ 毒×' + a.venomN, '#9fe870', 13); }
+  if (a.ability === 'venom') { b.venomN = Math.min(5, b.venomN + 1); b.venomT = 8; b.venomSrc = a.side; addText(b.x, b.y - 52, '☣ 毒×' + b.venomN, '#9fe870', 13); }
+  if (b.ability === 'venom') { a.venomN = Math.min(5, a.venomN + 1); a.venomT = 8; a.venomSrc = b.side; addText(a.x, a.y - 52, '☣ 毒×' + a.venomN, '#9fe870', 13); }
   // 进化：主动撞击方积累经验（每 3 点升级：体积+20% / 撞击伤害+15%，上限 3 级；进化加速期经验×2）
   if (a.ability === 'evolve') { a.evolveX += (a.evolveBoost > 0 ? 2 : 1); addText(a.x, a.y - 52, '🧬 经验+' + (a.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (a.evolveX >= 3 && a.evolveLv < 3) { a.evolveX = 0; a.evolveLv++; a.r *= 1.2; addRing(a.x, a.y, 70, '#7dffa8', 3); addText(a.x, a.y - 40, '🧬 进化 Lv.' + a.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
   if (b.ability === 'evolve') { b.evolveX += (b.evolveBoost > 0 ? 2 : 1); addText(b.x, b.y - 52, '🧬 经验+' + (b.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (b.evolveX >= 3 && b.evolveLv < 3) { b.evolveX = 0; b.evolveLv++; b.r *= 1.2; addRing(b.x, b.y, 70, '#7dffa8', 3); addText(b.x, b.y - 40, '🧬 进化 Lv.' + b.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
@@ -336,7 +352,9 @@ function collide(a, b) {
 }
 
 // ---------------- 能力 ----------------
-// V8 棺椁：随机封锁一个"没有小球存在"的四分之一场景（禁止敌人进入）
+// V8 棺椁：封锁一个四分之一场景（永久存在，敌人禁止进入）。每档封锁不同象限：
+// 三次触发后（10%/20%/40% 失血）共封锁 3 块，敌人活动范围只剩 1/4。
+// 返回 true=已封锁；false=全场已封锁满（不叠加）
 function sealCoffinZone(o) {
   const F = fieldRect();
   const h = F.s / 2;
@@ -347,37 +365,47 @@ function sealCoffinZone(o) {
     { x: F.x + h, y: F.y + h, w: h, h },  // 右下
   ];
   const inQuad = (o, q) => o.alive && o.x > q.x + 24 && o.x < q.x + q.w - 24 && o.y > q.y + 24 && o.y < q.y + q.h - 24;
-  const free = quads.filter(q => !battle.orbs.some(o2 => inQuad(o2, q)));
-  const pool = free.length ? free : quads;
+  // 场上已封锁的象限（全局避让：多棺椁互不叠区，防止把全场封死）
+  const lockedIdx = [];
+  for (const s of battle.structs) {
+    if (s.type !== 'coffinzone') continue;
+    const idx = s.quadIdx !== undefined ? s.quadIdx : quads.findIndex(q => q.x === s.x && q.y === s.y);
+    if (idx >= 0) lockedIdx.push(idx);
+  }
+  // 优先：无球 且 未封锁；其次：未封锁（球占区也封，强制压缩活动范围）
+  let pool = quads.filter((q, i) => !lockedIdx.includes(i) && !battle.orbs.some(o2 => inQuad(o2, q)));
+  if (!pool.length) pool = quads.filter((q, i) => !lockedIdx.includes(i));
+  if (!pool.length) return false; // 全部象限已被封锁：不再叠加（避免敌人活动空间归零）
   const q = pool[Math.floor(Math.random() * pool.length)];
-  battle.structs.push({ type: 'coffinzone', owner: o.side, x: q.x, y: q.y, w: q.w, h: q.h, life: 6, hitT: 0 });
+  battle.structs.push({ type: 'coffinzone', owner: o.side, x: q.x, y: q.y, w: q.w, h: q.h, quadIdx: quads.indexOf(q), hitT: 0 }); // 无 life：永久封锁
   addRing(q.x + q.w / 2, q.y + q.h / 2, 60, '#9a9ab0', 3);
   addText(q.x + q.w / 2, q.y + q.h / 2, '⚰ 封锁', '#9a9ab0', 15);
+  return true;
 }
-// V8 棺椁：在随机墙面的随机位置成片散落黑白蝴蝶（wallHitPos 为空则主动随机墙面）
-function spawnButterflies(o, wallHitPos) {
+// V8 棺椁：在随机"未被封印"墙面的随机位置生成黑白蝴蝶（高频低数量，周期性调用）
+// count：本批数量；墙面的生成点若落在已封锁的 coffinzone 象限内则重选（最多尝试 12 次）
+function spawnButterflies(o, count) {
   const F = fieldRect();
-  const N = 10;
-  let base;
-  if (wallHitPos) {
-    base = { x: wallHitPos.x, y: wallHitPos.y };
-  } else {
-    const edge = Math.floor(Math.random() * 4);
-    base = edge === 0 ? { x: F.x + rand(F.s * .15, F.s * .85), y: F.y + 30 }
-         : edge === 1 ? { x: F.x + F.s - 30, y: F.y + rand(F.s * .15, F.s * .85) }
-         : edge === 2 ? { x: F.x + rand(F.s * .15, F.s * .85), y: F.y + F.s - 30 }
-         : { x: F.x + 30, y: F.y + rand(F.s * .15, F.s * .85) };
+  const N = count || 2;
+  let px = null, py = null;
+  for (let tries = 0; tries < 12; tries++) {
+    const e = Math.floor(Math.random() * 4);
+    if (e === 0) { px = F.x + rand(F.s * .12, F.s * .88); py = F.y + 26; }
+    else if (e === 1) { px = F.x + F.s - 26; py = F.y + rand(F.s * .12, F.s * .88); }
+    else if (e === 2) { px = F.x + rand(F.s * .12, F.s * .88); py = F.y + F.s - 26; }
+    else { px = F.x + 26; py = F.y + rand(F.s * .12, F.s * .88); }
+    const locked = battle.structs.some(z => z.type === 'coffinzone' && px > z.x && px < z.x + z.w && py > z.y && py < z.y + z.h);
+    if (!locked) break;
+    px = null; py = null;
   }
+  if (px === null) return; // 全部墙面已被封印：放弃本批
   for (let i = 0; i < N; i++) {
-    const offA = rand(-1.3, 1.3);
-    const offD = rand(10, 160); // 沿墙面散落
-    const px = clamp(base.x + Math.cos(offA) * offD, F.x + 8, F.x + F.s - 8);
-    const py = clamp(base.y + Math.sin(offA) * offD, F.y + 8, F.y + F.s - 8);
-    const a = Math.atan2(o.y - py, o.x - px) + rand(-.5, .5);
-    battle.proj.push({ type: 'butterfly', owner: o.side, x: px, y: py, vx: Math.cos(a) * rand(120, 240), vy: Math.sin(a) * rand(120, 240), life: 6, r: 8, black: Math.random() < .5, hitT: 0 });
+    const cx = clamp(px + rand(-26, 26), F.x + 8, F.x + F.s - 8);
+    const cy = clamp(py + rand(-26, 26), F.y + 8, F.y + F.s - 8);
+    const a = Math.atan2(o.y - cy, o.x - cx) + rand(-.5, .5);
+    battle.proj.push({ type: 'butterfly', owner: o.side, x: cx, y: cy, vx: Math.cos(a) * rand(120, 240), vy: Math.sin(a) * rand(120, 240), life: 6, r: 8, black: Math.random() < .5, hitT: 0 });
   }
-  addText(base.x, base.y - 30, '🦋 黑白蝴蝶', '#e8e8f0', 13);
-  sfx('coffin');
+  addSparks(px, py, 3, '#e8e8f0'); // 轻量提示（高频生成不刷文字）
 }
 // V8 科技I/II：放置激光发射器（撞墙或主动），频率/伤害随能力不同，最多同时 16 台
 function placeLaserTurret(o) {
@@ -518,6 +546,7 @@ function fireAbility(o) {
       for (let i = 0; i < 14; i++) addFx({ type: 'heat', x: o.x + rand(-40, 40), y: o.y + rand(-40, 40), life: 0, maxLife: rand(.4, .8), w: rand(18, 40) });
       if (foe.alive && Math.hypot(foe.x - o.x, foe.y - o.y) < 300) {
         foe.burnT = Math.max(foe.burnT, 7);
+        foe.burnSrc = o.side; // 记录点燃者
         addSparks(foe.x, foe.y, 8, '#ff8833');
         addText(foe.x, foe.y - 34, '点燃', '#ff8833', 15);
       }
@@ -762,6 +791,7 @@ function fireAbility(o) {
       if (foe.alive && foe.invT <= 0 && Math.hypot(foe.x - o.x, foe.y - o.y) < 780) { // 喷毒范围 +200%（260→780）
         foe.venomN = Math.min(5, foe.venomN + 2);
         foe.venomT = 8;
+        foe.venomSrc = o.side; // 记录施毒者
         addText(foe.x, foe.y - 40, '☣ 毒雾·层数' + foe.venomN, '#9fe870', 14);
       }
       addRing(o.x, o.y, 60, '#9fe870', 2.5);
@@ -866,8 +896,8 @@ function fireAbility(o) {
       sfx('corrode');
       break;
     }
-    case 'coffin': { // 棺椁（主动）：在随机墙面成片散落黑白蝴蝶（撞墙/失血也会被动触发）
-      spawnButterflies(o, null);
+    case 'coffin': { // 棺椁（主动）：立即在随机未被封印的墙面生成一小批蝴蝶（周期被动也有）
+      spawnButterflies(o, 4);
       addRing(o.x, o.y, 60, '#e8e8f0', 2.5);
       addFx({ type: 'ring', x: o.x, y: o.y, r: 14, vr: 380, maxLife: .45, life: 0, color: '#e8e8f0', lw: 2.5 });
       sfx('coffin');
@@ -941,6 +971,7 @@ function fireAbility(o) {
 function killOrb(o) {
   if (battle.over || !o.alive) return;
   o.hp = 0; o.alive = false;
+  if (o.pinned) o.pinned.hitFoe = false; // 被钉死：解除钉子命中标记，撞墙按空钉处理（不拖尸体插墙）
   boom(o);
   const alive = battle.orbs.filter(x => x.alive);
   if (alive.length <= 1) {
@@ -958,7 +989,7 @@ function updateBattle(dt) {
   B.time += dt;
   const L = B.left, R = B.right;
   // 120 秒超时：零干预——直接按剩余血量比例判定胜负
-  if (B.time >= 120 && !B.over) {
+  if (B.time >= BALANCE.global.maxTime && !B.over) {
     B.over = true;
     for (const o of B.orbs) { o.regenT = 0; o.cd = 0; } // 冻结回血/冷却，保证结算显示与判定时刻一致
     const alive = B.orbs.filter(o => o.alive);
@@ -1018,8 +1049,8 @@ function updateBattle(dt) {
         B.vamp = null; // 墙边空间不足：吸身中断，避免卡死
       } else {
         A.x = ax; A.y = ay; C.x = cx; C.y = cy;
-        if (C.invT <= 0) C.hp -= 7.5 * dt; // 无敌期吸身不掉血
-        A.hp = Math.min(A.maxHp, A.hp + 5 * dt);
+        if (C.invT <= 0) C.hp -= 7.5 * dt * srcDmgMult(A); // 无敌期吸身不掉血；按吸血方倍率
+        A.hp = Math.min(A.maxHp, A.hp + 5 * dt * BALANCE.global.healMult * A.stats.healMult);
         if (Math.random() < .7) addFx({ type: 'spark', x: midx + rand(-20, 20), y: midy + rand(-20, 20), vx: rand(-20, 20), vy: rand(-40, -10), life: 0, maxLife: .5, size: 2.4, color: '#ff2244' });
         if (Math.random() < .3) addText(midx, midy - 42, '吸血', '#ff5060', 13);
       }
@@ -1053,14 +1084,17 @@ function updateBattle(dt) {
     if (o.rushT > 0) o.rushT -= dt;
     if (o.regenT > 0) {
       o.regenT -= dt;
-      o.hp = Math.min(o.maxHp, o.hp + 8 * dt);
+      o.hp = Math.min(o.maxHp, o.hp + 8 * dt * BALANCE.global.healMult * o.stats.healMult);
       if (Math.random() < .5) addFx({ type: 'spark', x: o.x + rand(-14, 14), y: o.y + rand(-14, 14), vx: rand(-30, 30), vy: rand(-70, -20), life: 0, maxLife: .5, size: 2, color: '#3dff9e' });
     }
     if (o.flash > 0) o.flash -= dt;
     // —— 新能力状态 ——
-    if (o.burnT > 0) { // 灼烧 DoT + 热浪 + 火星迸溅传染
+    if (o.burnT > 0) { // 灼烧 DoT + 热浪 + 火星迸溅传染（伤害按点燃者技能倍率）
       o.burnT -= dt;
-      if (o.invT <= 0) o.hp -= 3 * dt;
+      if (o.invT <= 0) {
+        const burnSrc = ownerOf(o.burnSrc);
+        o.hp -= 3 * dt * srcDmgMult(burnSrc);
+      }
       if (Math.random() < .5) addFx({ type: 'heat', x: o.x + rand(-28, 28), y: o.y + rand(-28, 28), life: 0, maxLife: .5, w: rand(16, 30) });
       if (Math.random() < .12) {
         const foe2 = nearestFoe(o);
@@ -1122,7 +1156,8 @@ function updateBattle(dt) {
         o.venomTick = (o.venomTick || 0) - dt;
         if (o.venomTick <= 0) {
           o.venomTick = 1;
-          o.hp -= o.venomN * 2;
+          const venomSrc = ownerOf(o.venomSrc);
+          o.hp -= o.venomN * 2 * srcDmgMult(venomSrc); // 按施毒者倍率
           addText(o.x + rand(-10, 10), o.y - 50, '毒-' + o.venomN * 2, '#9fe870', 13);
           addSparks(o.x, o.y, 3, '#9fe870');
         }
@@ -1215,19 +1250,24 @@ function updateBattle(dt) {
       if (o.corrodeT > 0) { o.corrodeT -= dt; if (o.corrodeT <= 0) o.corrodeN = 0; } // 腐蚀易伤层过期
       if (o.corrodeSlowT > 0) { o.corrodeSlowT -= dt; if (o.corrodeSlowT <= 0) o.corrodeSlowN = 0; } // 腐蚀减速层过期
       if (o.vulnT > 0) o.vulnT -= dt; // 电线杆易伤
-      if (o.ability === 'coffin' && o.alive) { // 棺椁：失血阈值 → 封锁无球四分之一区（10% / 20% / 40%）
+      if (o.ability === 'coffin' && o.alive) { // 棺椁：失血阈值封锁 + 蝴蝶高频低数量生成
+        // 先封锁（新区落定），后生成蝴蝶——保证蝴蝶生成点避开包括本帧新封锁在内的全部封锁区
         const ratio = o.hp / o.maxHp;
         const stage = ratio < .6 ? 3 : ratio < .8 ? 2 : ratio < .9 ? 1 : 0;
         if (stage > o.coffinStage) {
           o.coffinStage = stage;
-          sealCoffinZone(o);
-          addText(o.x, o.y - 44, '⚰ 棺椁封锁', '#9a9ab0', 14);
-          sfx('coffin');
+          if (sealCoffinZone(o)) { // 成功封锁才播提示（全场已封满时返回 false）
+            addText(o.x, o.y - 44, '⚰ 棺椁封锁', '#9a9ab0', 14);
+            sfx('coffin');
+          }
         }
-      }
-      if (o.ability === 'coffin' && o.butterflyWall) { // 棺椁：撞墙散蝶
-        spawnButterflies(o, o.butterflyWall);
-        o.butterflyWall = null;
+        // 每 2s 在随机未被封印的墙面生成 2 只黑白蝴蝶（高频低数量）
+        o.butterflyCd = (o.butterflyCd || 0) - dt;
+        if (o.butterflyCd <= 0) {
+          o.butterflyCd = 2;
+          spawnButterflies(o, 2);
+          if (Math.random() < .5) sfx('coffin'); // 音效节流
+        }
       }
       if ((o.ability === 'tech1' || o.ability === 'tech2') && o.techWall) { // 科技I/II：撞墙留激光台
         placeLaserTurret(o);
@@ -1519,6 +1559,7 @@ function updateBattle(dt) {
       if (foe.alive && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + p.r + 4) {
         p.life = 0;
         foe.burnT = Math.max(foe.burnT, 4);
+        foe.burnSrc = p.owner; // 记录点燃者
         addSparks(p.x, p.y, 5, '#ff8833');
       }
     }
@@ -1552,7 +1593,7 @@ function updateBattle(dt) {
       }
       if (p.grace <= 0 && own.alive && Math.hypot(own.x - p.x, own.y - p.y) < own.r + p.r) { // 与本体融合
         p.life = 0;
-        own.hp = Math.min(own.maxHp, own.hp + 8);
+        own.hp = Math.min(own.maxHp, own.hp + 8 * BALANCE.global.healMult * own.stats.healMult);
         addText(own.x, own.y - 34, '+8 融合', '#3dff9e', 14);
         addRing(p.x, p.y, 36, p.color, 2);
       }
@@ -1615,6 +1656,7 @@ function updateBattle(dt) {
         p.life = 0;
         foe.venomN = Math.min(5, foe.venomN + 1);
         foe.venomT = 8;
+        foe.venomSrc = p.owner; // 记录施毒者
         addSparks(p.x, p.y, 4, '#9fe870');
       }
     }
@@ -1639,7 +1681,7 @@ function updateBattle(dt) {
       const foe = nearestFoe(ownerOf(p.owner));
       if (foe.alive && p.hitT <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + p.r) {
         p.hitT = 1;
-        hitOrb(foe, 8, ownerOf(p.owner), true); // 碰撞伤害
+        hitOrb(foe, 8, ownerOf(p.owner), true); // 召唤物伤害（按技能伤害倍率 skillMult，与幻影/分裂子球一致）
         const dx = foe.x - p.x, dy = foe.y - p.y;
         const dd = Math.hypot(dx, dy) || 1;
         foe.vx += dx / dd * 260; foe.vy += dy / dd * 260; // 击退
@@ -1684,20 +1726,42 @@ function updateBattle(dt) {
       }
     }
     // —— V8 投射物 ——
-    if (p.type === 'cursenail') { // 诅咒之钉：命中钉住敌人继续飞行（拖着敌人），直到撞墙触发诅咒之火
+    if (p.type === 'cursenail') { // 诅咒之钉：命中钉住敌人拖向墙；撞墙后钉子钉入墙体继续钉住敌人并燃起诅咒之火
+      if (p.stuck) { // 已钉入墙体：位置固定，存续到期后拔出释放被钉目标
+        p.angle = (p.angle || 0) + dt * 2;
+        if (p.life <= 0) {
+          for (const o of B.orbs) if (o.pinned === p) {
+            o.pinned = null; o.pinT = 0;
+            addText(o.x, o.y - 44, '钉子拔出', '#cfe0ff', 14);
+            addSparks(o.x, o.y, 6, '#c07aff');
+          }
+        }
+        continue;
+      }
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.angle = (p.angle || 0) + dt * 4;
       if (Math.random() < .5) addFx({ type: 'spark', x: p.x, y: p.y, vx: rand(-6, 6), vy: rand(-6, 6), life: 0, maxLife: .2, size: 2, color: '#c07aff' });
       const owner = ownerOf(p.owner);
       const hitWall = p.x < F.x + p.r || p.x > F.x + F.s - p.r || p.y < F.y + p.r || p.y > F.y + F.s - p.r;
-      if (hitWall || p.life <= 0) { // 撞墙（或寿命耗尽兜底）：释放被钉目标 + 生成逐渐变大的诅咒火焰圈
-        p.life = 0;
-        for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13); }
+      if (hitWall) { // 撞墙：钉着敌人 → 钉子钉入墙体（敌人保持被钉住）；空钉 → 释放消失。两者都燃起诅咒火焰
         const wx = clamp(p.x, F.x + p.r, F.x + F.s - p.r), wy = clamp(p.y, F.y + p.r, F.y + F.s - p.r);
+        if (p.hitFoe) {
+          // 钉子钉在墙上继续存在：被钉敌人锁在墙上（活靶子），墙钉 3.2s 后拔出
+          p.x = wx; p.y = wy; p.vx = 0; p.vy = 0;
+          p.stuck = true; p.life = 3.2;
+          addRing(wx, wy, 46, '#c07aff', 2.5);
+          addText(wx, wy - 44, '⛏ 钉入墙体', '#c07aff', 15);
+          sfx('clash');
+        } else {
+          p.life = 0;
+          for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13); }
+        }
         B.structs.push({ type: 'cursefire', owner: p.owner, x: wx, y: wy, r: 40, life: 3.2, hitT: 0 });
         addFx({ type: 'ring', x: wx, y: wy, r: 20, vr: 420, maxLife: .45, life: 0, color: '#c07aff', lw: 3.5 });
         addText(wx, wy - 36, '诅咒火焰', '#c07aff', 14);
         sfx('boom');
+      } else if (p.life <= 0) { // 未撞墙寿命耗尽（兜底）：释放被钉目标
+        for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子脱落', '#cfe0ff', 13); }
       } else if (!p.hitFoe) { // 未钉人时探测敌人；命中后钉子继续飞行（不销毁），把敌人钉在钉子上拖向墙面
         // 命中零伤害（纯控制）：伤害由撞墙后的诅咒火焰圈结算
         for (const o of B.orbs) {
@@ -1705,7 +1769,7 @@ function updateBattle(dt) {
           if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
             if (o.invT <= 0) {
               p.hitFoe = true; // 防同一钉子每帧重复命中
-              o.pinned = p; o.pinT = 999; // 钉住直到钉子撞墙（无超时松开）
+              o.pinned = p; o.pinT = 999; // 钉住直到钉子钉入墙体（无超时松开）
               addText(o.x, o.y - 44, '➳ 被钉住!', '#c07aff', 15);
               addRing(o.x, o.y, 50, '#c07aff', 2.5);
               sfx('curse');

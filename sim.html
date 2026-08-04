@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>球斗竞技场 · 胜率模拟器</title>
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/sim.css">
+</head>
+<body>
+
+<div class="win" id="win">
+
+  <!-- 标题栏 -->
+  <header class="win-bar">
+    <div class="win-title">
+      <span class="dot"></span>
+      <span>球斗竞技场 · 批量胜率模拟器</span>
+    </div>
+    <div class="win-actions">
+      <a class="tbtn link" href="editor.html" title="数值编辑器">⚙ 数值编辑器</a>
+      <a class="tbtn link" href="index.html" title="游戏">▶ 打开游戏</a>
+    </div>
+  </header>
+
+  <main class="win-body">
+
+    <!-- 模式切换 -->
+    <div class="mode-switch" id="mode-switch">
+      <button class="mode-btn sel" data-mode="1v1">⚔ 1v1 对决</button>
+      <button class="mode-btn" data-mode="rank">📊 强度排行</button>
+      <button class="mode-btn" data-mode="matrix">🧮 全能力矩阵</button>
+      <button class="mode-btn" data-mode="brawl">💥 混战 3P/4P</button>
+    </div>
+
+    <!-- 1v1 / 排行：A/B 配置卡片 -->
+    <div class="duo" id="duo">
+      <section class="card orb-panel" id="panel-A">
+        <div class="card-head">🔵 A 方 <span class="hint" id="hint-A">（左侧）</span></div>
+        <label class="row">
+          <span>能力</span>
+          <select id="A-ability"></select>
+        </label>
+        <label class="row">
+          <span>名称</span>
+          <input id="A-name" maxlength="14">
+        </label>
+        <div class="sliders" id="A-sliders"></div>
+      </section>
+      <section class="card orb-panel" id="panel-B">
+        <div class="card-head">🔴 B 方 <span class="hint" id="hint-B">（右侧）</span></div>
+        <label class="row">
+          <span>能力</span>
+          <select id="B-ability"></select>
+        </label>
+        <label class="row">
+          <span>名称</span>
+          <input id="B-name" maxlength="14">
+        </label>
+        <div class="sliders" id="B-sliders"></div>
+      </section>
+    </div>
+
+    <!-- 混战：4 球位简表 -->
+    <section class="card" id="brawl-panel" style="display:none">
+      <div class="card-head">💥 混战球位 <span class="hint">（数值取数值编辑器的保存配置，此处只改能力）</span>
+        <label class="p inline">球数
+          <select id="p-pn">
+            <option value="3">3P</option>
+            <option value="4" selected>4P</option>
+          </select>
+        </label>
+      </div>
+      <div class="brawl-grid" id="brawl-grid"></div>
+    </section>
+
+    <!-- 矩阵提示 -->
+    <section class="card" id="matrix-hint" style="display:none">
+      <div class="card-head">🧮 全能力矩阵</div>
+      <div class="hint-text">遍历全部 49 个能力两两对战（49×49×N 场），输出强度排行 + 完整矩阵 CSV。
+      耗时较长：N=10 时约 24000 场，需数分钟。排行模式（📊）只打一列，推荐先用它。</div>
+    </section>
+
+    <!-- 参数 + 运行 -->
+    <section class="card run-bar">
+      <label class="p">场数 <input type="number" id="p-n" value="200" min="10" step="10"></label>
+      <label class="p">超时 <input type="number" id="p-maxtime" value="120" min="20" max="600" step="5"> s</label>
+      <label class="p">种子 <input type="number" id="p-seed" placeholder="随机" min="0"></label>
+      <button class="btn primary" id="btn-run">▶ 开始模拟</button>
+      <button class="btn" id="btn-cancel" style="display:none">⏹ 停止</button>
+      <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+      <span class="pct" id="pct">0%</span>
+    </section>
+
+    <!-- 结果 -->
+    <section class="card result" id="result-card" style="display:none">
+      <div class="card-head">📋 结果 <span class="hint" id="result-meta"></span></div>
+      <div id="result-body"></div>
+    </section>
+
+  </main>
+
+  <footer class="win-foot">
+    <span id="status">就绪</span>
+    <span class="foot-right">模拟引擎直接运行游戏真实战斗逻辑 · 每场自动换位消除左右先手偏差</span>
+  </footer>
+</div>
+
+<!-- 游戏逻辑（模拟引擎依赖；draw.js 的装饰函数由下方预置 stub 兜底） -->
+<script>
+  // 预置 stub：data.js 顶层引用的装饰绘制函数（本页不渲染球）
+  window.drawDecRing = window.drawDecSpike = window.drawDecStripe = window.drawDecHex = window.drawDecCross = () => {};
+  window.sfx = () => {};
+  window.showScreen = () => {};
+  window.showResult = () => {};
+</script>
+<script src="js/core.js"></script>
+<script src="js/data.js"></script>
+<script src="js/balance.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/battle.js"></script>
+<script>
+  // 后置覆写：固定场地 + 特效 no-op + 能力查找 + 假定时器（模拟期间按模拟时间推进）
+  window.fieldRect = () => ({ x: 0, y: 0, s: 720 });
+  window.addFx = window.addRing = window.addSparks = window.addText = window.boom = window.updateFx = () => {};
+  window.abOf = id => ABILITIES.find(a => a.id === id) || ABILITIES[0];
+  const simTimers = [];
+  let simNow = 0, simActive = false;
+  const origSetTimeout = window.setTimeout.bind(window);
+  window.setTimeout = (fn, ms) => {
+    if (simActive) { simTimers.push({ fn, at: simNow + (ms || 0) / 1000 }); return simTimers.length; }
+    return origSetTimeout(fn, ms);
+  };
+  function simTick(dt) {
+    simNow += dt;
+    let guard = 0;
+    while (guard++ < 10000) {
+      const due = simTimers.filter(t => t.at <= simNow + 1e-9);
+      if (!due.length) break;
+      for (const t of due) {
+        const i = simTimers.indexOf(t);
+        if (i >= 0) simTimers.splice(i, 1);
+        try { t.fn(); } catch (e) { console.error('模拟回调异常:', e); }
+      }
+    }
+  }
+</script>
+<script src="js/sim.js"></script>
+</body>
+</html>

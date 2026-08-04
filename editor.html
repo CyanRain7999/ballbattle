@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>球斗竞技场 · 数值编辑器</title>
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+
+<div class="win" id="win">
+
+  <!-- 标题栏 -->
+  <header class="win-bar">
+    <div class="win-title">
+      <span class="dot"></span>
+      <span>球斗竞技场 · 数值编辑器 ORB BALANCE LAB</span>
+    </div>
+    <div class="win-actions">
+      <button class="tbtn" id="btn-save" title="保存到游戏（localStorage）">💾 保存</button>
+      <button class="tbtn" id="btn-export" title="导出 balance.json（模拟器读取）">📤 导出 JSON</button>
+      <button class="tbtn" id="btn-import" title="导入 balance.json">📥 导入</button>
+      <button class="tbtn" id="btn-reset" title="恢复默认数值">↺ 重置</button>
+      <a class="tbtn link" href="index.html" title="回到游戏">▶ 打开游戏</a>
+      <input type="file" id="file-import" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <main class="win-body">
+
+    <!-- 全局平衡参数 -->
+    <section class="card global">
+      <div class="card-head">🌐 全局平衡参数 <span class="hint">（作用于所有球，默认值 = 游戏原始数值）</span></div>
+      <div class="grid g-global">
+        <label class="field">
+          <span class="fname">全局基础伤害倍率 <em>dmgMult</em></span>
+          <input type="range" id="g-dmgMult" min="0.2" max="4" step="0.05">
+          <span class="fval" id="v-g-dmgMult"></span>
+          <small>原硬编码 1.5（全局伤害 +50%），乘算在所有伤害之前</small>
+        </label>
+        <label class="field">
+          <span class="fname">技能伤害倍率 <em>skillMult</em></span>
+          <input type="range" id="g-skillMult" min="0.2" max="4" step="0.05">
+          <span class="fval" id="v-g-skillMult"></span>
+          <small>技能 / 投射物 / DoT / 领域伤害</small>
+        </label>
+        <label class="field">
+          <span class="fname">碰撞伤害倍率 <em>collideMult</em></span>
+          <input type="range" id="g-collideMult" min="0.2" max="4" step="0.05">
+          <span class="fval" id="v-g-collideMult"></span>
+          <small>两球相撞结算的伤害</small>
+        </label>
+        <label class="field">
+          <span class="fname">回复 / 吸血倍率 <em>healMult</em></span>
+          <input type="range" id="g-healMult" min="0" max="4" step="0.05">
+          <span class="fval" id="v-g-healMult"></span>
+          <small>纳米修复 / 吸血鬼 / 药水回复 / 传送门 +血 等</small>
+        </label>
+        <label class="field">
+          <span class="fname">巡航速度倍率 <em>speedMult</em></span>
+          <input type="range" id="g-speedMult" min="0.2" max="4" step="0.05">
+          <span class="fval" id="v-g-speedMult"></span>
+          <small>所有球的自然飞行速度</small>
+        </label>
+        <label class="field">
+          <span class="fname">技能冷却倍率 <em>cdMult</em></span>
+          <input type="range" id="g-cdMult" min="0.2" max="4" step="0.05">
+          <span class="fval" id="v-g-cdMult"></span>
+          <small>越大技能越慢（仅初始冷却；能力自身动态 CD 不受影响）</small>
+        </label>
+        <label class="field">
+          <span class="fname">超时秒数 <em>maxTime</em></span>
+          <input type="range" id="g-maxTime" min="30" max="300" step="5">
+          <span class="fval" id="v-g-maxTime"></span>
+          <small>到时按剩余血量比例判胜，平局 DRAW</small>
+        </label>
+      </div>
+    </section>
+
+    <!-- 各球种数值 -->
+    <section class="card">
+      <div class="card-head">🎱 球种数值（精准调整每一种球）
+        <span class="hint">下拉选择球种 → 修改它的全部参数 → 保存。游戏中任何使用该球种的球都会生效 · 倍率与全局同名参数乘算</span>
+      </div>
+      <div class="ab-picker">
+        <select id="ab-pick"></select>
+        <div class="ab-desc" id="ab-desc"></div>
+      </div>
+      <div class="ab-panel" id="ab-panel"></div>
+    </section>
+
+  </main>
+
+  <footer class="win-foot">
+    <span id="status">就绪</span>
+    <span class="foot-right">保存后刷新游戏页面生效 · 导出 JSON 供 <code>sim/simulate.js</code> 批量模拟</span>
+  </footer>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/data.js"></script>
+<script src="js/balance.js"></script>
+<script src="js/editor.js"></script>
+</body>
+</html>

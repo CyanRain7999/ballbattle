@@ -125,6 +125,9 @@ $('#btn-again').onclick = () => startTransition();
 $('#btn-reconfig').onclick = () => { showScreen('select'); buildPanels(); };
 $('#btn-random2').onclick = randomizeAll;
 $('#btn-start2').onclick = startGame;
+// 数值编辑器入口（2P 的 btn-balance 在 select.js 动态生成，3P/4P 在 index.html 静态定义）
+const balanceBtn = $('#btn-balance');
+if (balanceBtn) balanceBtn.onclick = () => { location.href = 'editor.html'; };
 document.querySelectorAll('#mode-switch .mode-btn').forEach(b => {
   b.onclick = () => {
     gameMode = +b.dataset.mode;
