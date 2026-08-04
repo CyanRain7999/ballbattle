@@ -202,6 +202,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;
 .hud-side.bl{bottom:74px;left:34px}
 .hud-side.br{bottom:74px;right:34px;align-items:flex-end;text-align:right}
 .hud-name{font-size:15px;letter-spacing:.18em;font-family:Consolas,monospace;font-weight:700;text-shadow:0 0 10px currentColor}
+.hud-orb{width:64px;height:64px;flex:none;margin:1px 0;filter:drop-shadow(0 0 8px rgba(0,229,255,.18))}
 .hud-type{font-size:10px;letter-spacing:.28em;font-family:Consolas,monospace;color:var(--dim);margin-top:2px}
 .hud-job{font-size:13px;letter-spacing:.22em;font-family:Consolas,monospace;font-weight:700;text-shadow:0 0 8px currentColor;margin-top:2px}
 .hpbar{width:100%;height:13px;border:1px solid #1e3a5c;background:#04101e;position:relative;overflow:hidden}
@@ -279,3 +280,35 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;
   #btn-pause{right:56px}
   #btn-sound{right:10px}
 }
+
+/* ============ 玩法规则（缩圈/障碍/双能力） ============ */
+.rules-switch{display:flex;gap:8px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center}
+.rule-btn{background:linear-gradient(180deg,#0e2a3f,#081725);border:1px solid #1e4a6b;color:var(--dim);
+  padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;letter-spacing:.08em;transition:all .15s}
+.rule-btn:hover{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(0,229,255,.25)}
+.rule-btn.sel{color:#02131c;background:linear-gradient(90deg,#00b8d9,#0084ff);border-color:#00b8d9;font-weight:700;box-shadow:0 0 14px rgba(0,184,217,.45)}
+.psec-skill2{display:none}
+.sechint{font-size:10px;color:var(--cyan);letter-spacing:.1em;opacity:.85}
+.skill2-sel{width:100%;padding:7px 9px;background:#04101e;color:#cfe8ff;border:1px solid #1e4a6b;border-radius:6px;
+  font-size:13px;cursor:pointer;outline:none}
+.skill2-sel:focus{border-color:var(--cyan);box-shadow:0 0 10px rgba(0,229,255,.3)}
+.skill2-sel option{background:#081725;color:#cfe8ff}
+/* 副能力 CD 条（青色系，与主能力琥珀色区分） */
+.cdrow2{display:none;opacity:.85}
+.cdrow2 .cd-icon{color:var(--cyan);border-color:#175a80}
+.cd2fill{height:100%;width:0%;background:var(--cyan);box-shadow:0 0 6px rgba(0,229,255,.7)}
+
+/* ============ 队伍模式（2v2 团战 / 4v1 BOSS） ============ */
+.team-blue{border-color:#2f6bff !important;box-shadow:0 0 14px rgba(47,107,255,.35)}
+.team-red{border-color:#ff2d55 !important;box-shadow:0 0 14px rgba(255,45,85,.35)}
+.team-players{border-color:#2dff8f !important;box-shadow:0 0 14px rgba(45,255,143,.3)}
+/* BOSS 顶部中央血条 */
+.hud-boss{position:absolute;top:56px;left:50%;transform:translateX(-50%);width:min(360px,44vw);
+  background:rgba(10,6,18,.72);border:1px solid #5c1230;border-radius:10px;padding:7px 12px;
+  display:flex;flex-direction:column;gap:4px;box-shadow:0 0 18px rgba(255,45,85,.35);backdrop-filter:blur(3px)}
+.hud-boss-name{font-size:13px;font-weight:700;letter-spacing:.18em;color:#ff8fa8;text-shadow:0 0 10px rgba(255,45,85,.8)}
+.hud-boss-job{font-size:10px;color:#ff8fa8;opacity:.85}
+.boss-hpbar{height:10px}
+.boss-fill{background:linear-gradient(90deg,#ff2d55,#ff8090);box-shadow:0 0 10px rgba(255,45,85,.9)}
+.hud-boss .hud-status{font-size:10px;color:#ffb8c0}
+.multi-hint{font-size:11px;color:var(--cyan);letter-spacing:.08em;opacity:.85;text-align:center;width:100%}

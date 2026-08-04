@@ -12,6 +12,8 @@
     "test:e2e": "node test/check_e2e.js",
     "test:sim": "node test/check_sim.js",
     "test:migrate": "node test/check_migrate.js",
+    "test:modes": "node test/check_modes.js",
+    "test:teams": "node test/check_teams.js",
     "sim": "node sim/simulate.js"
   }
 }

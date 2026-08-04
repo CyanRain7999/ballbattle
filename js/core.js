@@ -19,6 +19,8 @@ function fmtTime(t) {
 let state = 'select';
 let players = {};   // { left: cfg, right: cfg }（多球模式为 { p0, p1, p2, p3 }）
 let gameMode = 2;   // 2 / 3 / 4 球模式
+// 玩法规则（与人数正交，选择屏勾选）：shrink 缩圈 / obstacles 障碍布局('none'|'cross'|'corners'|'blocks'|'spinner') / multiSkill 双能力
+let gameRules = { shrink: false, obstacles: 'none', multiSkill: false };
 let battle = null;  // 战斗实例
 
 // ---------------- 屏幕管理 ----------------
@@ -32,20 +34,36 @@ function showScreen(name) {
 const battleCanvas = $('#battle-canvas');
 const bctx = battleCanvas ? battleCanvas.getContext('2d') : null; // 编辑器页无该元素时降级
 
-// ---------------- 多球辅助（V8：支持 2/3/4 球） ----------------
+// ---------------- 多球辅助（V8：支持 2/3/4 球；V9：2v2 团战 / 4v1 BOSS 队伍模式） ----------------
 function ownerOf(side) { return battle.orbs.find(o => o.side === side); }
-function foesOf(o) { return battle.orbs.filter(x => x !== o && x.alive); }
+// 队伍映射：battle.teams = { 队名: [side...] }；传统模式为 null（全员互敌）
+const TEAM_LABELS = { blue: '蓝队', red: '红队', players: '玩家队', boss: 'BOSS' };
+function teamOf(side) {
+  const t = battle && battle.teams;
+  if (!t) return null;
+  for (const name of Object.keys(t)) if (t[name].includes(side)) return name;
+  return null;
+}
+function isFoe(a, b) {
+  if (!battle || !battle.teams) return true;
+  return teamOf(a.side) !== teamOf(b.side);
+}
+function foesOf(o) { return battle.orbs.filter(x => x !== o && x.alive && isFoe(o, x)); }
 function nearestFoe(o) {
   let best = null, bd = Infinity;
   for (const f of battle.orbs) {
     if (f === o || !f.alive) continue;
+    if (!isFoe(o, f)) continue; // 队伍模式：队友不是目标
     const d = Math.hypot(f.x - o.x, f.y - o.y);
     if (d < bd) { bd = d; best = f; }
   }
-  return best || battle.orbs.find(x => x !== o);
+  // 兜底返回任意其他球（仅发生在敌方全灭的终局瞬间，hitOrb 的 battle.over 守卫会短路伤害）
+  return best || battle.orbs.find(x => x !== o && isFoe(o, x)) || battle.orbs.find(x => x !== o);
 }
 
 function fieldRect() {
+  // 缩圈模式：战斗实例维护动态场地矩形（初始=全屏，逐级内缩），全部反弹/投射物/绘制自动跟随
+  if (battle && battle.field) return battle.field;
   const w = innerWidth, h = innerHeight;
   const s = Math.min(w * .94, h * .84, 720);
   return { x: (w - s) / 2, y: (h - s) / 2 + 6, s };

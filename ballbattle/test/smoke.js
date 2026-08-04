@@ -125,8 +125,8 @@ async function main() {
       preview: !!document.querySelector('#preview-left'),
       active: document.querySelector('.screen.active')?.id
     })`);
-    assert(sel.swatches === 8, '选择屏: 8 色板', JSON.stringify(sel));
-    assert(sel.decCards === 6, '选择屏: 6 装饰', JSON.stringify(sel));
+    assert(sel.swatches === 16, '选择屏: 16 色板', JSON.stringify(sel));
+    assert(sel.decCards === 12, '选择屏: 12 装饰', JSON.stringify(sel));
     assert(sel.abCards === 49, '选择屏: 49 能力', JSON.stringify(sel));
     assert(sel.preview, '选择屏: 预览 canvas 存在', JSON.stringify(sel));
     assert(sel.active === 'screen-select', '选择屏: 初始屏为选择屏', JSON.stringify(sel));

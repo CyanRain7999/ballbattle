@@ -1,10 +1,18 @@
 function makeOrb(side, cfg) {
   const ab = abOf(cfg.ability);
+  // 数值配置层：按球种（能力）取数值——所有使用该能力的球共用一套配置；
+  // 模拟器可传 cfg.stats 显式覆盖
+  const st = cfg.stats ? orbStats(cfg.ability, cfg.stats) : orbStats(cfg.ability);
+  // 双能力模式：副能力独立 CD（+30% 惩罚），伤害 ×0.5 由 castAbility 的 skillMul 处理
+  const skill2 = cfg.skill2 && cfg.skill2 !== 'none' ? cfg.skill2 : null;
+  const maxCd2 = skill2 ? abOf(skill2).cd * st.cdMult * BALANCE.global.cdMult * 1.3 : 0;
   return {
     side, name: cfg.name, color: cfg.color, decor: cfg.decor, ability: cfg.ability,
-    x: 0, y: 0, vx: 0, vy: 0, r: 50,
-    hp: 400, maxHp: 400,
-    cd: ab.cd * .55, maxCd: ab.cd,
+    skill2, cd2: maxCd2 * .55, maxCd2,
+    x: 0, y: 0, vx: 0, vy: 0, r: st.r,
+    hp: st.maxHp, maxHp: st.maxHp,
+    maxCd: ab.cd * st.cdMult * BALANCE.global.cdMult, cd: ab.cd * .55 * st.cdMult * BALANCE.global.cdMult,
+    stats: st,
     flash: 0, shieldT: 0, rushT: 0, regenT: 0, invT: 0,
     // 新能力状态
     burnT: 0, slowT: 0, slowPct: 0, sealT: 0,
@@ -30,24 +38,37 @@ function makeOrb(side, cfg) {
   };
 }
 
-// 战斗 HUD：按模式动态生成四角面板（2P: 左上右上 / 3P: 左上左下右下 / 4P: 四角）
+// 4v1 BOSS：系统配置的强力球（techx 主 + curse 副；高血量/大体积/慢速/技能更快/伤害更高）
+function makeBossCfg() {
+  return {
+    name: 'BOSS', color: { name: '猩红核心', main: '#ff2d55', bright: '#ff8fa8' }, decor: 'spike',
+    ability: 'techx', skill2: 'curse',
+    stats: { maxHp: 1800, r: 62, cruise: 260, dmgMult: 1.3, skillMult: 1.3, collideMult: 1, healMult: .5, cdMult: .8 },
+  };
+}
+
+// 战斗 HUD：按模式动态生成面板（2P: 左上右上 / 3P: 左上左下右下 / 4P·2v2·BOSS玩家: 四角 / BOSS: 顶部中央血条）
 function buildHUD() {
   const hud = $('#hud');
   hud.querySelectorAll('.hud-side').forEach(el => el.remove());
+  const nb = $('#hud-boss'); if (nb) nb.remove();
   const n = battle.mode;
   const posOf = side => {
     if (n === 2) return side === 'left' ? 'tl' : 'tr';
     if (n === 3) return side === 'left' ? 'tl' : side === 'right' ? 'bl' : 'br';
-    return side === 'left' ? 'tl' : side === 'right' ? 'tr' : side === 'p2' ? 'bl' : 'br';
+    return side === 'left' ? 'tl' : side === 'right' ? 'tr' : side === 'p2' ? 'bl' : 'br'; // 4P/2v2/BOSS 玩家四角
   };
   battle.orbs.forEach(o => {
+    if (o.side === 'boss') return; // BOSS 用顶部中央血条（下方单独构建）
     const pos = posOf(o.side);
     const right = pos === 'tr' || pos === 'br';
+    const team = teamOf(o.side);
     const el = document.createElement('div');
-    el.className = 'hud-side ' + pos + (right ? ' right' : '');
+    el.className = 'hud-side ' + pos + (right ? ' right' : '') + (team ? ' team-' + team : '');
     el.id = 'hud-side-' + o.side;
     el.innerHTML = `
       <div class="hud-name" id="hud-name-${o.side}">PLAYER</div>
+      <canvas class="hud-orb" id="hud-orb-${o.side}" width="64" height="64"></canvas>
       <div class="hud-type" id="hud-type-${o.side}">近战 MELEE</div>
       <div class="hpbar"><div class="hpfill" id="hp-${o.side}"></div><div class="hpnum" id="hpnum-${o.side}">100%</div></div>
       <div class="hud-job" id="hud-job-${o.side}"></div>
@@ -55,6 +76,10 @@ function buildHUD() {
       <div class="cdrow">
         <div class="cd-icon" id="cd-icon-${o.side}">◉</div>
         <div class="cdtrack"><div class="cdfill" id="cd-${o.side}"></div></div>
+      </div>
+      <div class="cdrow cdrow2" id="cdrow2-${o.side}">
+        <div class="cd-icon" id="cd2-icon-${o.side}">◉</div>
+        <div class="cdtrack"><div class="cdfill cd2fill" id="cd2-${o.side}"></div></div>
       </div>
       <div class="cdrow railrow" id="railrow-${o.side}">
         <div class="rail-icon" style="color:#ffd0ff">◎</div>
@@ -64,50 +89,301 @@ function buildHUD() {
       </div>`;
     hud.insertBefore(el, hud.querySelector('.hud-mid'));
   });
+  // BOSS 顶部中央血条（id 命名与面板一致，updateHUD 现有循环自动更新血量/CD/状态）
+  if (n === 6) {
+    const el = document.createElement('div');
+    el.className = 'hud-boss';
+    el.id = 'hud-boss';
+    el.innerHTML = `
+      <div class="hud-boss-name" id="hud-boss-name">BOSS</div>
+      <div class="hpbar boss-hpbar"><div class="hpfill boss-fill" id="hp-boss"></div><div class="hpnum" id="hpnum-boss">100%</div></div>
+      <div class="hud-boss-job" id="hud-boss-job"></div>
+      <div class="hud-status" id="hud-status-boss"></div>
+      <div class="cdrow">
+        <div class="cd-icon" id="cd-icon-boss">✳</div>
+        <div class="cdtrack"><div class="cdfill" id="cd-boss"></div></div>
+      </div>
+      <div class="cdrow cdrow2" id="cdrow2-boss">
+        <div class="cd-icon" id="cd2-icon-boss">◉</div>
+        <div class="cdtrack"><div class="cdfill cd2fill" id="cd2-boss"></div></div>
+      </div>`;
+    hud.insertBefore(el, hud.querySelector('.hud-mid'));
+  }
   const vs = $('#hud-vs');
-  vs.textContent = n === 2 ? 'VS' : n + 'P 混战';
+  vs.textContent = n === 2 ? 'VS' : n === 5 ? '2V2 团战' : n === 6 ? '4V1 BOSS' : n + 'P 混战';
+}
+
+// 双能力辅助：主/副能力任一匹配即视为拥有该能力（碰撞被动/常驻被动均生效）
+const hasAb = (o, id) => o.ability === id || o.skill2 === id;
+
+// ---------------- 玩法规则：障碍物 ----------------
+// 障碍布局（相对坐标 0~1，运行时按当前场地换算 → 缩圈时自动跟随缩放）
+const OBSTACLE_LAYOUTS = {
+  cross: [ // 中心十字墙：分成四区，边缘留通道
+    { kind: 'rect', fx: .44, fy: .08, fw: .12, fh: .84 },
+    { kind: 'rect', fx: .08, fy: .44, fw: .84, fh: .12 },
+  ],
+  corners: [ // 四角方块：压缩中央走廊
+    { kind: 'rect', fx: .04, fy: .04, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .80, fy: .04, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .04, fy: .80, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .80, fy: .80, fw: .16, fh: .16 },
+  ],
+  blocks: [ // 迷宫块：两侧竖块 + 上下横块交错
+    { kind: 'rect', fx: .16, fy: .28, fw: .14, fh: .44 },
+    { kind: 'rect', fx: .70, fy: .28, fw: .14, fh: .44 },
+    { kind: 'rect', fx: .30, fy: .12, fw: .40, fh: .14 },
+    { kind: 'rect', fx: .30, fy: .74, fw: .40, fh: .14 },
+  ],
+  spinner: [ // 中央旋转隔板（battle.spinnerA 驱动旋转）
+    { kind: 'seg', fx1: .5, fy1: .3, fx2: .5, fy2: .7 },
+  ],
+  grid3: [ // 九宫格：四角 + 中心（边中点留通道）
+    { kind: 'rect', fx: .10, fy: .10, fw: .22, fh: .22 },
+    { kind: 'rect', fx: .68, fy: .10, fw: .22, fh: .22 },
+    { kind: 'rect', fx: .39, fy: .39, fw: .22, fh: .22 },
+    { kind: 'rect', fx: .10, fy: .68, fw: .22, fh: .22 },
+    { kind: 'rect', fx: .68, fy: .68, fw: .22, fh: .22 },
+  ],
+  ring: [ // 八块环：四边各两块围圈（角与边中缝留通道；角块相切不重叠）
+    { kind: 'rect', fx: .14, fy: .05, fw: .30, fh: .09 },
+    { kind: 'rect', fx: .56, fy: .05, fw: .30, fh: .09 },
+    { kind: 'rect', fx: .14, fy: .86, fw: .30, fh: .09 },
+    { kind: 'rect', fx: .56, fy: .86, fw: .30, fh: .09 },
+    { kind: 'rect', fx: .05, fy: .14, fw: .09, fh: .30 },
+    { kind: 'rect', fx: .05, fy: .56, fw: .09, fh: .30 },
+    { kind: 'rect', fx: .86, fy: .14, fw: .09, fh: .30 },
+    { kind: 'rect', fx: .86, fy: .56, fw: .09, fh: .30 },
+  ],
+  slalom: [ // 之字柱：上排两块 → 中排一块 → 下排两块（S 型走位）
+    { kind: 'rect', fx: .08, fy: .08, fw: .20, fh: .12 },
+    { kind: 'rect', fx: .72, fy: .08, fw: .20, fh: .12 },
+    { kind: 'rect', fx: .40, fy: .44, fw: .20, fh: .12 },
+    { kind: 'rect', fx: .08, fy: .80, fw: .20, fh: .12 },
+    { kind: 'rect', fx: .72, fy: .80, fw: .20, fh: .12 },
+  ],
+};
+// 随机布局生成器（每次开战布局不同）：random 完全随机 6 块；randomsym 左半场随机 3 块 + 右半场镜像（左右公平）
+function genRandomObstacles(sym) {
+  const overlap = (a, b) => !(a.fx + a.fw < b.fx || b.fx + b.fw < a.fx || a.fy + a.fh < b.fy || b.fy + b.fh < a.fy);
+  const placed = [];
+  let guard = 0;
+  if (sym) {
+    while (placed.length < 6 && guard++ < 300) {
+      const w = rand(.10, .16), h = rand(.10, .16);
+      const x = rand(.06, .44 - w), y = rand(.08, .92 - h); // 左半场
+      const r = { kind: 'rect', fx: x, fy: y, fw: w, fh: h };
+      if (placed.some(p => overlap(p, r))) continue;
+      placed.push(r);
+      placed.push({ kind: 'rect', fx: 1 - x - w, fy: y, fw: w, fh: h }); // 左右镜像
+    }
+  } else {
+    while (placed.length < 6 && guard++ < 300) {
+      const w = rand(.10, .18), h = rand(.10, .18);
+      const r = { kind: 'rect', fx: rand(.06, .94 - w), fy: rand(.06, .94 - h), fw: w, fh: h };
+      if (placed.some(p => overlap(p, r))) continue;
+      placed.push(r);
+    }
+  }
+  return placed;
+}
+const OBSTACLE_GENERATORS = { random: () => genRandomObstacles(false), randomsym: () => genRandomObstacles(true) };
+function buildObstacles(B, F0) {
+  let rel = OBSTACLE_LAYOUTS[B.rules.obstacles];
+  if (!rel && OBSTACLE_GENERATORS[B.rules.obstacles]) rel = OBSTACLE_GENERATORS[B.rules.obstacles](); // 随机布局：每次开战重新生成
+  if (!rel) return;
+  B.obstacles = rel;
+  B.obstAbs = [];
+  if (rel.some(o => o.kind === 'seg')) B.spinnerA = Math.random() * TAU; // 随机初始角
+}
+// 每帧：相对坐标 → 绝对坐标（跟随缩圈场地）；旋转隔板缓慢自转（0.55 rad/s 可预测可利用）
+function updateObstacles(B, dt) {
+  const F = B.field;
+  if (B.rules.obstacles === 'spinner') B.spinnerA += dt * .55;
+  B.obstAbs = B.obstacles.map(ob => {
+    if (ob.kind === 'seg') {
+      const cx = F.x + F.s * .5, cy = F.y + F.s * .5;
+      const len = F.s * .4, a = B.spinnerA;
+      return { kind: 'seg', x1: cx + Math.cos(a) * len, y1: cy + Math.sin(a) * len, x2: cx - Math.cos(a) * len, y2: cy - Math.sin(a) * len };
+    }
+    return { kind: 'rect', x: F.x + ob.fx * F.s, y: F.y + ob.fy * F.s, w: ob.fw * F.s, h: ob.fh * F.s };
+  });
+}
+// 球撞障碍反弹：矩形用最近点法线、线段用垂足法线，反射速度 + 位置推出（与撞墙同构）
+function bounceObstacles(o) {
+  const B = battle;
+  if (!B.obstAbs || !B.obstAbs.length) return;
+  for (const ob of B.obstAbs) {
+    let nx, ny;
+    if (ob.kind === 'seg') {
+      const dx = ob.x2 - ob.x1, dy = ob.y2 - ob.y1;
+      const len2 = dx * dx + dy * dy || 1;
+      let t = ((o.x - ob.x1) * dx + (o.y - ob.y1) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const px = ob.x1 + dx * t, py = ob.y1 + dy * t;
+      const ddx = o.x - px, ddy = o.y - py;
+      const dd = Math.hypot(ddx, ddy);
+      if (dd >= o.r) continue;
+      if (dd < 1e-6) { // 球心恰在杆上：用杆法线推出
+        nx = -dy / Math.sqrt(len2); ny = dx / Math.sqrt(len2);
+        o.x += nx * o.r; o.y += ny * o.r;
+      } else {
+        nx = ddx / dd; ny = ddy / dd;
+        o.x = px + nx * o.r; o.y = py + ny * o.r;
+      }
+    } else {
+      const bx = Math.max(ob.x, Math.min(o.x, ob.x + ob.w));
+      const by = Math.max(ob.y, Math.min(o.y, ob.y + ob.h));
+      const dx = o.x - bx, dy = o.y - by;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= o.r * o.r) continue;
+      if (d2 < 1e-8) { // 球心在矩形内部：按最小穿透轴推出
+        const l = o.x - ob.x, rr = ob.x + ob.w - o.x, tt = o.y - ob.y, bb = ob.y + ob.h - o.y;
+        const m = Math.min(l, rr, tt, bb);
+        if (m === l) { nx = -1; ny = 0; o.x = ob.x - o.r; }
+        else if (m === rr) { nx = 1; ny = 0; o.x = ob.x + ob.w + o.r; }
+        else if (m === tt) { nx = 0; ny = -1; o.y = ob.y - o.r; }
+        else { nx = 0; ny = 1; o.y = ob.y + ob.h + o.r; }
+      } else {
+        const d = Math.sqrt(d2);
+        nx = dx / d; ny = dy / d;
+        o.x = bx + nx * o.r; o.y = by + ny * o.r;
+      }
+    }
+    const dot = o.vx * nx + o.vy * ny;
+    if (dot < 0) { o.vx -= 2 * dot * nx; o.vy -= 2 * dot * ny; } // 正在靠近才反射
+  }
+}
+// ---------------- 玩法规则：缩圈 ----------------
+// 每 20s 触发一次（最多 3 次），场地逐级内缩 8%；贴圈灼伤惩罚龟缩，强制交战
+function updateShrink(B, dt) {
+  const S = B.shrink;
+  S.timer += dt;
+  if (S.timer >= 20 && S.level < S.maxLevel) {
+    S.level++;
+    S.timer = 0;
+    const F0 = B.fieldFull;
+    const ns = F0.s * Math.max(.76, 1 - S.level * .08);
+    S.target = { x: F0.x + (F0.s - ns) / 2, y: F0.y + (F0.s - ns) / 2, s: ns };
+    addText(F0.x + F0.s / 2, F0.y + F0.s / 2, '⏳ 缩圈 Lv.' + S.level, '#ff5060', 18);
+    sfx('coffin');
+  }
+  // 平滑逼近目标（约 4s 缩完一级）
+  const F = B.field, T = S.target;
+  const k = Math.min(1, dt * .4);
+  F.x += (T.x - F.x) * k; F.y += (T.y - F.y) * k; F.s += (T.s - F.s) * k;
+  // 贴圈灼伤：球距圈边不足 1.2 倍半径时持续掉血（惩罚贴边龟缩；死亡由 updateBattle 末尾统一死亡检查处理）
+  for (const o of B.orbs) {
+    if (!o.alive) continue;
+    const edge = o.r * 1.2;
+    if (o.x - F.x < edge || F.x + F.s - o.x < edge || o.y - F.y < edge || F.y + F.s - o.y < edge) {
+      o.hp -= 3 * dt;
+      o.flash = Math.max(o.flash, .12);
+      if (Math.random() < .25) addText(o.x, o.y - 40, '圈边灼伤', '#ff5060', 12);
+    }
+  }
 }
 
 function startBattle() {
-  const F = fieldRect();
+  const F0 = fieldRect(); // 初始全屏场地（battle.field 建立前的静态矩形）
   const n = gameMode;
+  const teamMode = n === 5 || n === 6; // 2v2 团战 / 4v1 BOSS：4 个玩家面板 + 队伍系统
+  const panelN = teamMode ? 4 : n;
   const orbs = [];
-  // 面板键：双球沿用 left/right，多球为 p0..p3
-  const keys = n === 2 ? ['left', 'right'] : ['p0', 'p1', 'p2', 'p3'].slice(0, n);
+  // 面板键：双球沿用 left/right，多球为 p0..p3（2v2/BOSS 取前 4 个）
+  const keys = panelN === 2 ? ['left', 'right'] : ['p0', 'p1', 'p2', 'p3'].slice(0, panelN);
   const cfgs = keys.map(k => players[k] || players.left || Object.values(players)[0] || { name: 'P', color: COLORS[0], decor: 'ring', ability: ABILITIES[0].id });
   cfgs.forEach((cfg, i) => {
     const o = makeOrb(i === 0 ? 'left' : i === 1 ? 'right' : 'p' + i, cfg);
     orbs.push(o);
   });
-  const sp = 300;
-  for (let i = 0; i < n; i++) {
-    const o = orbs[i];
-    const ang0 = i / n * TAU - Math.PI / 2; // 环形均布（从顶部开始）
-    const cx = F.x + F.s / 2, cy = F.y + F.s / 2;
-    const rr = F.s * (n === 2 ? .26 : .3);
-    o.x = cx + Math.cos(ang0) * rr;
-    o.y = cy + Math.sin(ang0) * rr;
-    // 外切方向飞行：朝外侧半球（避免开局对冲），随机 ±50°
-    const outA = ang0 + rand(-.9, .9);
-    o.vx = Math.cos(outA) * sp; o.vy = Math.sin(outA) * sp;
+  // 4v1 BOSS：追加系统配置的第 5 个球（techx 主 + railgun 副）
+  if (n === 6) orbs.push(makeOrb('boss', makeBossCfg()));
+  // 开局站位与发射速度
+  if (n === 5) { // 2v2：蓝队（left/p2）左半场上下、红队（right/p3）右半场上下，朝对方半场
+    const spots = [
+      { x: F0.x + F0.s * .22, y: F0.y + F0.s * .3, a: 0 },
+      { x: F0.x + F0.s * .78, y: F0.y + F0.s * .3, a: Math.PI },
+      { x: F0.x + F0.s * .22, y: F0.y + F0.s * .7, a: 0 },
+      { x: F0.x + F0.s * .78, y: F0.y + F0.s * .7, a: Math.PI },
+    ];
+    orbs.forEach((o, i) => {
+      const s = spots[i];
+      o.x = s.x; o.y = s.y;
+      const sp = o.stats.cruise * BALANCE.global.speedMult;
+      const outA = s.a + rand(-.5, .5);
+      o.vx = Math.cos(outA) * sp; o.vy = Math.sin(outA) * sp;
+    });
+  } else if (n === 6) { // BOSS：玩家四角外切（避免开局贴脸），BOSS 中心随机方向
+    for (let i = 0; i < 4; i++) {
+      const o = orbs[i];
+      const ang0 = i / 4 * TAU - Math.PI / 2;
+      const cx = F0.x + F0.s / 2, cy = F0.y + F0.s / 2;
+      const rr = F0.s * .35;
+      o.x = cx + Math.cos(ang0) * rr;
+      o.y = cy + Math.sin(ang0) * rr;
+      const sp = o.stats.cruise * BALANCE.global.speedMult;
+      const outA = ang0 + rand(-.9, .9);
+      o.vx = Math.cos(outA) * sp; o.vy = Math.sin(outA) * sp;
+    }
+    const boss = orbs[4];
+    boss.x = F0.x + F0.s / 2; boss.y = F0.y + F0.s / 2;
+    const bsp = boss.stats.cruise * BALANCE.global.speedMult;
+    const ba = Math.random() * TAU;
+    boss.vx = Math.cos(ba) * bsp; boss.vy = Math.sin(ba) * bsp;
+  } else { // 传统 2/3/4P：环形均布（从顶部开始），外切方向飞行（避免开局对冲），随机 ±50°
+    for (let i = 0; i < n; i++) {
+      const o = orbs[i];
+      const ang0 = i / n * TAU - Math.PI / 2;
+      const cx = F0.x + F0.s / 2, cy = F0.y + F0.s / 2;
+      const rr = F0.s * (n === 2 ? .26 : .3);
+      const sp = o.stats.cruise * BALANCE.global.speedMult;
+      o.x = cx + Math.cos(ang0) * rr;
+      o.y = cy + Math.sin(ang0) * rr;
+      const outA = ang0 + rand(-.9, .9);
+      o.vx = Math.cos(outA) * sp; o.vy = Math.sin(outA) * sp;
+    }
   }
-  battle = { orbs, left: orbs[0], right: orbs[1] || null, proj: [], fx: [], structs: [], time: 0, shake: 0, over: false, winner: null, paused: false, ambient: [], mode: n };
+  battle = { orbs, left: orbs[0], right: orbs[1] || null, proj: [], fx: [], structs: [], time: 0, shake: 0, over: false, winner: null, winnerTeam: null, paused: false, ambient: [], mode: n,
+    teams: n === 5 ? { blue: ['left', 'p2'], red: ['right', 'p3'] } : n === 6 ? { players: ['left', 'right', 'p2', 'p3'], boss: ['boss'] } : null,
+    rules: { shrink: !!gameRules.shrink, obstacles: gameRules.obstacles || 'none', multiSkill: !!gameRules.multiSkill },
+    field: { ...F0 }, fieldFull: { ...F0 } }; // field=动态场地（缩圈修改）；fieldFull=初始全屏
+  // 模式初始化：障碍物布局 / 缩圈状态机
+  if (battle.rules.obstacles !== 'none') buildObstacles(battle, F0);
+  if (battle.rules.shrink) battle.shrink = { level: 0, timer: 0, target: { ...F0 }, maxLevel: 3 };
   // 场地漂浮粒子（氛围）
   for (let i = 0; i < 36; i++) {
-    battle.ambient.push({ x: rand(F.x, F.x + F.s), y: rand(F.y, F.y + F.s), vx: rand(-14, 14), vy: rand(-14, 14), size: rand(1, 2.6), a: rand(.08, .4), ph: rand(0, TAU) });
+    battle.ambient.push({ x: rand(F0.x, F0.x + F0.s), y: rand(F0.y, F0.y + F0.s), vx: rand(-14, 14), vy: rand(-14, 14), size: rand(1, 2.6), a: rand(.08, .4), ph: rand(0, TAU) });
   }
   buildHUD();
   // HUD 文案
   const typeColor = { melee: '#ffb020', ranged: '#00e5ff' };
   battle.orbs.forEach((o, i) => {
     const sideKey = o.side;
-    $('#hud-name-' + sideKey).textContent = o.name;
+    const team = teamOf(o.side);
+    if (sideKey === 'boss') { // BOSS 中央血条（buildHUD 已建，id 与面板命名一致）
+      $('#hud-boss-name').textContent = o.name;
+      $('#hud-boss-name').style.color = o.color.bright;
+      $('#hud-boss-job').textContent = '◈ ' + abOf(o.ability).name + (o.skill2 ? ' + ' + abOf(o.skill2).name : '');
+      $('#hud-boss-job').style.color = o.color.bright;
+      $('#cd-icon-boss').textContent = abOf(o.ability).icon;
+      $('#hp-boss').style.width = '100%';
+      $('#cd-boss').style.width = '0%';
+      return;
+    }
+    $('#hud-name-' + sideKey).textContent = (team ? TEAM_LABELS[team] + ' ' : '') + o.name;
     $('#hud-name-' + sideKey).style.color = o.color.main;
     $('#hud-type-' + sideKey).textContent = TYPE_LABEL[abOf(o.ability).type];
     $('#hud-type-' + sideKey).style.color = typeColor[abOf(o.ability).type];
     $('#hud-job-' + sideKey).textContent = '◈ ' + abOf(o.ability).name;
     $('#hud-job-' + sideKey).style.color = o.color.bright;
     $('#cd-icon-' + sideKey).textContent = abOf(o.ability).icon;
+    // 双能力：副能力 CD 行（图标 + 显隐）
+    const row2 = $('#cdrow2-' + sideKey);
+    if (o.skill2) {
+      row2.style.display = 'flex';
+      $('#cd2-icon-' + sideKey).textContent = abOf(o.skill2).icon;
+    } else row2.style.display = 'none';
     $('#hp-' + sideKey).style.width = '100%';
     $('#cd-' + sideKey).style.width = '0%';
   });
@@ -147,12 +423,11 @@ function moveOrb(o, dt, foe) {
       addSparks(o.x, o.y, 5, '#e8f4ff');
     }
   };
-  // V8 撞墙 hook：科技I/II 留激光台 · 拘束留锚 · 棺椁散蝴蝶（在 updateBattle 中消费）
+  // V8 撞墙 hook：科技I/II 留激光台 · 拘束留锚 · 棺椁散蝴蝶（在 updateBattle 中消费；主/副能力均生效）
   const onWallHit = (o) => {
-    if (o.ability === 'anchor') o.wallHit = { x: o.x, y: o.y };
-    if (o.ability === 'tech1' || o.ability === 'tech2') o.techWall = { x: o.x, y: o.y };
-    if (o.ability === 'bond') o.bondWall = { x: o.x, y: o.y };
-    if (o.ability === 'coffin') o.butterflyWall = { x: o.x, y: o.y };
+    if (hasAb(o, 'anchor')) o.wallHit = { x: o.x, y: o.y };
+    if (hasAb(o, 'tech1') || hasAb(o, 'tech2')) o.techWall = { x: o.x, y: o.y };
+    if (hasAb(o, 'bond')) o.bondWall = { x: o.x, y: o.y };
   };
   const launchBounce = (o) => { // 弹射撞墙：受 2 次近战撞击伤害（发射台强化）
     if (o.launchT > 0) {
@@ -168,9 +443,9 @@ function moveOrb(o, dt, foe) {
   if (o.y < minY) { o.y = minY; o.vy = Math.abs(o.vy); webBounce(o, 'y'); launchBounce(o); onWallHit(o); }
   if (o.y > maxY) { o.y = maxY; o.vy = -Math.abs(o.vy); webBounce(o, 'y'); launchBounce(o); onWallHit(o); }
   // 巡航速度回归：速度自然衰减回类型巡航速度（狂暴突进 > 狂暴 > 连击层数 > 拘束锚点 > 远程；被撞后逃脱加速）
-  const comboSpd = (o.ability === 'combo' && o.comboN > 0) ? (1 + o.comboN * .045 * (o.comboX > 0 ? 2 : 1)) : 1;
-  const bondSpd = (o.ability === 'bond' && o.bondPts.length > 0) ? (1 + o.bondPts.length * .08) : 1; // 拘束：锚点越多越快
-  const cruise = 300 * (o.rushT > 0 ? 2.2 : 1) * comboSpd * bondSpd;
+  const comboSpd = (hasAb(o, 'combo') && o.comboN > 0) ? (1 + o.comboN * .045 * (o.comboX > 0 ? 2 : 1)) : 1;
+  const bondSpd = (hasAb(o, 'bond') && o.bondPts.length > 0) ? (1 + o.bondPts.length * .08) : 1; // 拘束：锚点越多越快
+  const cruise = o.stats.cruise * BALANCE.global.speedMult * (o.rushT > 0 ? 2.2 : 1) * comboSpd * bondSpd;
   const spd = Math.hypot(o.vx, o.vy);
   const ns = spd + (cruise - spd) * Math.min(1, dt * 1.5);
   if (spd > .001) { o.vx = o.vx / spd * ns; o.vy = o.vy / spd * ns; }
@@ -190,10 +465,37 @@ function moveOrb(o, dt, foe) {
   else if (o.x > maxX) { o.x = maxX; o.vx = -Math.abs(o.vx); webBounce(o, 'x'); launchBounce(o); onWallHit(o); }
   if (o.y < minY) { o.y = minY; o.vy = Math.abs(o.vy); webBounce(o, 'y'); launchBounce(o); onWallHit(o); }
   else if (o.y > maxY) { o.y = maxY; o.vy = -Math.abs(o.vy); webBounce(o, 'y'); launchBounce(o); onWallHit(o); }
+  // 障碍物反弹（十字墙/角块/迷宫块/旋转隔板）
+  if (battle.obstAbs && battle.obstAbs.length) bounceObstacles(o);
   o.angle += dt * (1.2 + Math.hypot(o.vx, o.vy) / 260);
   o.history.push({ x: o.x, y: o.y });
   const maxLen = o.decor === 'trail' ? 30 : 12;
   if (o.history.length > maxLen) o.history.splice(0, o.history.length - maxLen);
+}
+
+// 释放被钉目标（诅咒之钉）：清除 pinned 并恢复移动，返回被释放的球列表。
+// 被钉期间 moveOrb 把球速度同步为钉子速度；墙钉速度为 0，释放后
+// moveOrb 的巡航回归（只缩放非零速度）无法从静止恢复方向 → 必须重新赋予速度
+function releasePinned(p) {
+  const out = [];
+  for (const o of battle.orbs) {
+    if (o.pinned !== p) continue;
+    o.pinned = null; o.pinT = 0;
+    if (Math.hypot(o.vx, o.vy) < 1) {
+      const a = Math.random() * TAU;
+      const sp = o.stats.cruise * BALANCE.global.speedMult;
+      o.vx = Math.cos(a) * sp; o.vy = Math.sin(a) * sp;
+    }
+    out.push(o);
+  }
+  return out;
+}
+
+// DoT/领域/陷阱等直减血伤害的倍率：与 hitOrb 的技能伤害乘区完全一致
+// （全局基础 × 施加者总倍率 × 全局技能 × 施加者技能）
+function srcDmgMult(src) {
+  const m = src && src.stats ? src.stats : null;
+  return BALANCE.global.dmgMult * (m ? m.dmgMult : 1) * BALANCE.global.skillMult * (m ? m.skillMult : 1);
 }
 
 function hitOrb(target, dmg, src, silent, isCollision) {
@@ -215,7 +517,14 @@ function hitOrb(target, dmg, src, silent, isCollision) {
     }
     return;
   }
-  dmg *= 1.5; // 全局伤害 +50%
+  // 伤害倍率：全局基础 × 攻击方总倍率 ×（碰撞/技能分项：全局 × 攻击方）
+  const srcM = src && src.stats ? src.stats : null;
+  dmg *= BALANCE.global.dmgMult * (srcM ? srcM.dmgMult : 1)
+      * (isCollision
+          ? BALANCE.global.collideMult * (srcM ? srcM.collideMult : 1)
+          : BALANCE.global.skillMult * (srcM ? srcM.skillMult : 1));
+  // 双能力：副能力施放后 2.5s 削弱窗口内，该球全部技能伤害 ×0.5（覆盖弹道/召唤物等延迟结算路径；碰撞伤害豁免；DoT 按施加者倍率不受影响）
+  if (!isCollision && src && src.skillMul && src.skillMul !== 1 && battle.time < (src.skillMulUntil || 0)) dmg *= src.skillMul;
   // 吸血鬼吸身期 90% 庇护：严格 10% 承伤，全部易伤/减伤乘区不叠加（互斥优先）
   if (battle.vamp && battle.vamp.t > 0 && target === battle.vamp.src) {
     dmg *= .1;
@@ -255,6 +564,8 @@ function hitOrb(target, dmg, src, silent, isCollision) {
 }
 
 function collide(a, b) {
+  // 队伍模式（2v2/BOSS）：队友之间不碰撞不互伤
+  if (!isFoe(a, b)) return;
   // 吸血鬼吸身期：跳过碰撞结算（吸身自带 DPS），防止贴墙时每帧反复碰撞判定导致瞬间即死
   if (battle.vamp && battle.vamp.t > 0) return;
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -303,31 +614,31 @@ function collide(a, b) {
   // 新：狂暴突进命中附带减速
   if (a.rushT > 0) { b.slowT = Math.max(b.slowT, .8); b.slowPct = .35; addText(b.x, b.y - 34, '震击减速', '#ff8090', 12); }
   if (b.rushT > 0) { a.slowT = Math.max(a.slowT, .8); a.slowPct = .35; addText(a.x, a.y - 34, '震击减速', '#ff8090', 12); }
-  // —— 能力被动效果（撞击触发）——
-  if (a.ability === 'burn') b.burnT = Math.max(b.burnT, 5);
-  if (b.ability === 'burn') a.burnT = Math.max(a.burnT, 5);
+  // —— 能力被动效果（撞击触发，主/副能力均生效）——
+  if (hasAb(a, 'burn')) { b.burnT = Math.max(b.burnT, 5); b.burnSrc = a.side; } // burnSrc：记录点燃者（DoT 按施加者技能倍率结算）
+  if (hasAb(b, 'burn')) { a.burnT = Math.max(a.burnT, 5); a.burnSrc = b.side; }
   // 剧毒：主动撞击方给对方叠毒层（上限 5，毒时间 8s）
-  if (a.ability === 'venom') { b.venomN = Math.min(5, b.venomN + 1); b.venomT = 8; addText(b.x, b.y - 52, '☣ 毒×' + b.venomN, '#9fe870', 13); }
-  if (b.ability === 'venom') { a.venomN = Math.min(5, a.venomN + 1); a.venomT = 8; addText(a.x, a.y - 52, '☣ 毒×' + a.venomN, '#9fe870', 13); }
+  if (hasAb(a, 'venom')) { b.venomN = Math.min(5, b.venomN + 1); b.venomT = 8; b.venomSrc = a.side; addText(b.x, b.y - 52, '☣ 毒×' + b.venomN, '#9fe870', 13); }
+  if (hasAb(b, 'venom')) { a.venomN = Math.min(5, a.venomN + 1); a.venomT = 8; a.venomSrc = b.side; addText(a.x, a.y - 52, '☣ 毒×' + a.venomN, '#9fe870', 13); }
   // 进化：主动撞击方积累经验（每 3 点升级：体积+20% / 撞击伤害+15%，上限 3 级；进化加速期经验×2）
-  if (a.ability === 'evolve') { a.evolveX += (a.evolveBoost > 0 ? 2 : 1); addText(a.x, a.y - 52, '🧬 经验+' + (a.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (a.evolveX >= 3 && a.evolveLv < 3) { a.evolveX = 0; a.evolveLv++; a.r *= 1.2; addRing(a.x, a.y, 70, '#7dffa8', 3); addText(a.x, a.y - 40, '🧬 进化 Lv.' + a.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
-  if (b.ability === 'evolve') { b.evolveX += (b.evolveBoost > 0 ? 2 : 1); addText(b.x, b.y - 52, '🧬 经验+' + (b.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (b.evolveX >= 3 && b.evolveLv < 3) { b.evolveX = 0; b.evolveLv++; b.r *= 1.2; addRing(b.x, b.y, 70, '#7dffa8', 3); addText(b.x, b.y - 40, '🧬 进化 Lv.' + b.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
-  if (a.ability === 'combo' && b.ability === 'combo') { // 双连击：互清后各自叠层
+  if (hasAb(a, 'evolve')) { a.evolveX += (a.evolveBoost > 0 ? 2 : 1); addText(a.x, a.y - 52, '🧬 经验+' + (a.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (a.evolveX >= 3 && a.evolveLv < 3) { a.evolveX = 0; a.evolveLv++; a.r *= 1.2; addRing(a.x, a.y, 70, '#7dffa8', 3); addText(a.x, a.y - 40, '🧬 进化 Lv.' + a.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
+  if (hasAb(b, 'evolve')) { b.evolveX += (b.evolveBoost > 0 ? 2 : 1); addText(b.x, b.y - 52, '🧬 经验+' + (b.evolveBoost > 0 ? 2 : 1), '#7dffa8', 12); if (b.evolveX >= 3 && b.evolveLv < 3) { b.evolveX = 0; b.evolveLv++; b.r *= 1.2; addRing(b.x, b.y, 70, '#7dffa8', 3); addText(b.x, b.y - 40, '🧬 进化 Lv.' + b.evolveLv, '#7dffa8', 16); sfx('evolve'); } }
+  if (hasAb(a, 'combo') && hasAb(b, 'combo')) { // 双连击：互清后各自叠层
     a.comboN = Math.min(10, a.comboN + 1);
     b.comboN = Math.min(10, b.comboN + 1);
   } else {
-    if (a.ability === 'combo') { a.comboN = Math.min(10, a.comboN + 1); b.comboN = 0; addText(a.x, a.y - 40, '连击×' + a.comboN, '#ffd050', 14); }
-    if (b.ability === 'combo') { b.comboN = Math.min(10, b.comboN + 1); a.comboN = 0; addText(b.x, b.y - 40, '连击×' + b.comboN, '#ffd050', 14); }
+    if (hasAb(a, 'combo')) { a.comboN = Math.min(10, a.comboN + 1); b.comboN = 0; addText(a.x, a.y - 40, '连击×' + a.comboN, '#ffd050', 14); }
+    if (hasAb(b, 'combo')) { b.comboN = Math.min(10, b.comboN + 1); a.comboN = 0; addText(b.x, b.y - 40, '连击×' + b.comboN, '#ffd050', 14); }
   }
-  if (a.ability === 'vampire' && !battle.vamp && a.vampT <= 0) battle.vamp = { src: a, foe: b, t: 2 };
-  if (b.ability === 'vampire' && !battle.vamp && b.vampT <= 0) battle.vamp = { src: b, foe: a, t: 2 };
-  if (a.ability === 'split' && a.splitCd <= 0 && b.alive) { // 被撞分裂
+  if (hasAb(a, 'vampire') && !battle.vamp && a.vampT <= 0) battle.vamp = { src: a, foe: b, t: 2 };
+  if (hasAb(b, 'vampire') && !battle.vamp && b.vampT <= 0) battle.vamp = { src: b, foe: a, t: 2 };
+  if (hasAb(a, 'split') && a.splitCd <= 0 && b.alive) { // 被撞分裂
     a.splitCd = 3;
     const sa = Math.random() * TAU;
     battle.proj.push({ type: 'shard', owner: a.side, x: a.x + Math.cos(sa) * 85, y: a.y + Math.sin(sa) * 85, vx: Math.cos(sa) * 230, vy: Math.sin(sa) * 230, life: 5, r: 16, color: a.color.bright, hitT: 0, grace: .8 });
     addText(a.x, a.y - 40, '分裂', a.color.bright, 14);
   }
-  if (b.ability === 'split' && b.splitCd <= 0 && a.alive) {
+  if (hasAb(b, 'split') && b.splitCd <= 0 && a.alive) {
     b.splitCd = 3;
     const sa = Math.random() * TAU;
     battle.proj.push({ type: 'shard', owner: b.side, x: b.x + Math.cos(sa) * 85, y: b.y + Math.sin(sa) * 85, vx: Math.cos(sa) * 230, vy: Math.sin(sa) * 230, life: 5, r: 16, color: b.color.bright, hitT: 0, grace: .8 });
@@ -336,7 +647,9 @@ function collide(a, b) {
 }
 
 // ---------------- 能力 ----------------
-// V8 棺椁：随机封锁一个"没有小球存在"的四分之一场景（禁止敌人进入）
+// V8 棺椁：封锁一个四分之一场景（永久存在，敌人禁止进入）。每档封锁不同象限：
+// 三次触发后（10%/20%/40% 失血）共封锁 3 块，敌人活动范围只剩 1/4。
+// 返回 true=已封锁；false=全场已封锁满（不叠加）
 function sealCoffinZone(o) {
   const F = fieldRect();
   const h = F.s / 2;
@@ -347,37 +660,47 @@ function sealCoffinZone(o) {
     { x: F.x + h, y: F.y + h, w: h, h },  // 右下
   ];
   const inQuad = (o, q) => o.alive && o.x > q.x + 24 && o.x < q.x + q.w - 24 && o.y > q.y + 24 && o.y < q.y + q.h - 24;
-  const free = quads.filter(q => !battle.orbs.some(o2 => inQuad(o2, q)));
-  const pool = free.length ? free : quads;
+  // 场上已封锁的象限（全局避让：多棺椁互不叠区，防止把全场封死）
+  const lockedIdx = [];
+  for (const s of battle.structs) {
+    if (s.type !== 'coffinzone') continue;
+    const idx = s.quadIdx !== undefined ? s.quadIdx : quads.findIndex(q => q.x === s.x && q.y === s.y);
+    if (idx >= 0) lockedIdx.push(idx);
+  }
+  // 优先：无球 且 未封锁；其次：未封锁（球占区也封，强制压缩活动范围）
+  let pool = quads.filter((q, i) => !lockedIdx.includes(i) && !battle.orbs.some(o2 => inQuad(o2, q)));
+  if (!pool.length) pool = quads.filter((q, i) => !lockedIdx.includes(i));
+  if (!pool.length) return false; // 全部象限已被封锁：不再叠加（避免敌人活动空间归零）
   const q = pool[Math.floor(Math.random() * pool.length)];
-  battle.structs.push({ type: 'coffinzone', owner: o.side, x: q.x, y: q.y, w: q.w, h: q.h, life: 6, hitT: 0 });
+  battle.structs.push({ type: 'coffinzone', owner: o.side, x: q.x, y: q.y, w: q.w, h: q.h, quadIdx: quads.indexOf(q), hitT: 0 }); // 无 life：永久封锁
   addRing(q.x + q.w / 2, q.y + q.h / 2, 60, '#9a9ab0', 3);
   addText(q.x + q.w / 2, q.y + q.h / 2, '⚰ 封锁', '#9a9ab0', 15);
+  return true;
 }
-// V8 棺椁：在随机墙面的随机位置成片散落黑白蝴蝶（wallHitPos 为空则主动随机墙面）
-function spawnButterflies(o, wallHitPos) {
+// V8 棺椁：在随机"未被封印"墙面的随机位置生成黑白蝴蝶（高频低数量，周期性调用）
+// count：本批数量；墙面的生成点若落在已封锁的 coffinzone 象限内则重选（最多尝试 12 次）
+function spawnButterflies(o, count) {
   const F = fieldRect();
-  const N = 10;
-  let base;
-  if (wallHitPos) {
-    base = { x: wallHitPos.x, y: wallHitPos.y };
-  } else {
-    const edge = Math.floor(Math.random() * 4);
-    base = edge === 0 ? { x: F.x + rand(F.s * .15, F.s * .85), y: F.y + 30 }
-         : edge === 1 ? { x: F.x + F.s - 30, y: F.y + rand(F.s * .15, F.s * .85) }
-         : edge === 2 ? { x: F.x + rand(F.s * .15, F.s * .85), y: F.y + F.s - 30 }
-         : { x: F.x + 30, y: F.y + rand(F.s * .15, F.s * .85) };
+  const N = count || 2;
+  let px = null, py = null;
+  for (let tries = 0; tries < 12; tries++) {
+    const e = Math.floor(Math.random() * 4);
+    if (e === 0) { px = F.x + rand(F.s * .12, F.s * .88); py = F.y + 26; }
+    else if (e === 1) { px = F.x + F.s - 26; py = F.y + rand(F.s * .12, F.s * .88); }
+    else if (e === 2) { px = F.x + rand(F.s * .12, F.s * .88); py = F.y + F.s - 26; }
+    else { px = F.x + 26; py = F.y + rand(F.s * .12, F.s * .88); }
+    const locked = battle.structs.some(z => z.type === 'coffinzone' && px > z.x && px < z.x + z.w && py > z.y && py < z.y + z.h);
+    if (!locked) break;
+    px = null; py = null;
   }
+  if (px === null) return; // 全部墙面已被封印：放弃本批
   for (let i = 0; i < N; i++) {
-    const offA = rand(-1.3, 1.3);
-    const offD = rand(10, 160); // 沿墙面散落
-    const px = clamp(base.x + Math.cos(offA) * offD, F.x + 8, F.x + F.s - 8);
-    const py = clamp(base.y + Math.sin(offA) * offD, F.y + 8, F.y + F.s - 8);
-    const a = Math.atan2(o.y - py, o.x - px) + rand(-.5, .5);
-    battle.proj.push({ type: 'butterfly', owner: o.side, x: px, y: py, vx: Math.cos(a) * rand(120, 240), vy: Math.sin(a) * rand(120, 240), life: 6, r: 8, black: Math.random() < .5, hitT: 0 });
+    const cx = clamp(px + rand(-26, 26), F.x + 8, F.x + F.s - 8);
+    const cy = clamp(py + rand(-26, 26), F.y + 8, F.y + F.s - 8);
+    const a = Math.atan2(o.y - cy, o.x - cx) + rand(-.5, .5);
+    battle.proj.push({ type: 'butterfly', owner: o.side, x: cx, y: cy, vx: Math.cos(a) * rand(120, 240), vy: Math.sin(a) * rand(120, 240), life: 6, r: 8, black: Math.random() < .5, hitT: 0 });
   }
-  addText(base.x, base.y - 30, '🦋 黑白蝴蝶', '#e8e8f0', 13);
-  sfx('coffin');
+  addSparks(px, py, 3, '#e8e8f0'); // 轻量提示（高频生成不刷文字）
 }
 // V8 科技I/II：放置激光发射器（撞墙或主动），频率/伤害随能力不同，最多同时 16 台
 function placeLaserTurret(o) {
@@ -394,8 +717,19 @@ function placeLaserTurret(o) {
 }
 function fireAbility(o) {
   o.cd = 0;
+  castAbility(o, o.ability, 1);
+}
+// 统一施放入口：主能力 mult=1；副能力 mult=.5（伤害 ×0.5 由 hitOrb 的 skillMul 缩放，平衡代价）。
+// 施放期间临时切换 o.ability，使 case 内部对 o.ability 的判断（如 tech1/tech2 的 fast 分支）自动正确；
+// 施放结束恢复主能力；副能力不干扰主能力的动态 maxCd（slash 低血提速 / fang 命中缩短）。
+function castAbility(o, id, mult) {
+  const prevAbility = o.ability;
+  o.ability = id;
+  const prevMaxCd = o.maxCd;
+  // 副能力：伤害 ×0.5 以 2.5s 削弱窗口生效（窗口内该球全部技能伤害打折，弹道/召唤物延迟结算同样覆盖）
+  if (mult !== 1) { o.skillMul = mult; o.skillMulUntil = battle.time + 2.5; }
   const foe = nearestFoe(o);
-  switch (o.ability) {
+  switch (id) {
     case 'pulse': {
       addRing(o.x, o.y, o.r, o.color.bright, 3.5);
       addFx({ type: 'ring', x: o.x, y: o.y, r: o.r, vr: 460, maxLife: .55, life: 0, color: o.color.bright, lw: 3.5 });
@@ -518,6 +852,7 @@ function fireAbility(o) {
       for (let i = 0; i < 14; i++) addFx({ type: 'heat', x: o.x + rand(-40, 40), y: o.y + rand(-40, 40), life: 0, maxLife: rand(.4, .8), w: rand(18, 40) });
       if (foe.alive && Math.hypot(foe.x - o.x, foe.y - o.y) < 300) {
         foe.burnT = Math.max(foe.burnT, 7);
+        foe.burnSrc = o.side; // 记录点燃者
         addSparks(foe.x, foe.y, 8, '#ff8833');
         addText(foe.x, foe.y - 34, '点燃', '#ff8833', 15);
       }
@@ -618,7 +953,7 @@ function fireAbility(o) {
     // —— V3 新能力 ——
     case 'boomerang': { // 回旋镖：直线飞出，命中折返，收回后重置 cd（镖体已放大）
       const a = Math.atan2(foe.y - o.y, foe.x - o.x);
-      battle.proj.push({ type: 'boomerang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, life: 7, r: 36, hitFoe: false, returning: false });
+      battle.proj.push({ type: 'boomerang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, life: 7, r: 36, hitFoe: false, returning: false, skill2: mult !== 1 });
       sfx('boomerang');
       break;
     }
@@ -696,7 +1031,7 @@ function fireAbility(o) {
     case 'fang': { // 兽牙：每 cd 自动射箭，命中缩短下次间隔（独立字段 fangCd，下限 0.8）
       o.maxCd = o.fangCd || 3; // 同步当前间隔（防与 slash 等动态 maxCd 串扰）
       const a = Math.atan2(foe.y - o.y, foe.x - o.x);
-      battle.proj.push({ type: 'fang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 864, vy: Math.sin(a) * 864, life: 1.1, r: 6 }); // 弹速 +60%（540→864）
+      battle.proj.push({ type: 'fang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 864, vy: Math.sin(a) * 864, life: 1.1, r: 6, skill2: mult !== 1 }); // 弹速 +60%（540→864）
       sfx('fang');
       break;
     }
@@ -762,6 +1097,7 @@ function fireAbility(o) {
       if (foe.alive && foe.invT <= 0 && Math.hypot(foe.x - o.x, foe.y - o.y) < 780) { // 喷毒范围 +200%（260→780）
         foe.venomN = Math.min(5, foe.venomN + 2);
         foe.venomT = 8;
+        foe.venomSrc = o.side; // 记录施毒者
         addText(foe.x, foe.y - 40, '☣ 毒雾·层数' + foe.venomN, '#9fe870', 14);
       }
       addRing(o.x, o.y, 60, '#9fe870', 2.5);
@@ -866,8 +1202,8 @@ function fireAbility(o) {
       sfx('corrode');
       break;
     }
-    case 'coffin': { // 棺椁（主动）：在随机墙面成片散落黑白蝴蝶（撞墙/失血也会被动触发）
-      spawnButterflies(o, null);
+    case 'coffin': { // 棺椁（主动）：立即在随机未被封印的墙面生成一小批蝴蝶（周期被动也有）
+      spawnButterflies(o, 4);
       addRing(o.x, o.y, 60, '#e8e8f0', 2.5);
       addFx({ type: 'ring', x: o.x, y: o.y, r: 14, vr: 380, maxLife: .45, life: 0, color: '#e8e8f0', lw: 2.5 });
       sfx('coffin');
@@ -933,6 +1269,9 @@ function fireAbility(o) {
       break;
     }
   }
+  o.ability = prevAbility;
+  // 副能力：恢复主能力动态 maxCd；skillMul/skillMulUntil 保留至削弱窗口自然过期（hitOrb 按时间判断）
+  if (mult !== 1) o.maxCd = prevMaxCd;
 }
 
 // ---------------- 战斗更新 ----------------
@@ -941,11 +1280,24 @@ function fireAbility(o) {
 function killOrb(o) {
   if (battle.over || !o.alive) return;
   o.hp = 0; o.alive = false;
+  if (o.pinned) o.pinned.hitFoe = false; // 被钉死：解除钉子命中标记，撞墙按空钉处理（不拖尸体插墙）
   boom(o);
   const alive = battle.orbs.filter(x => x.alive);
-  if (alive.length <= 1) {
+  let finished = false;
+  if (battle.teams) {
+    // 队伍模式：只剩一队（含全灭）即终局；winnerTeam 记录胜队（全灭 → null 平局）
+    const teamSet = new Set(alive.map(x => teamOf(x.side)));
+    finished = teamSet.size <= 1;
+    if (finished) {
+      battle.winner = alive[0] || null;
+      battle.winnerTeam = teamSet.size === 1 && alive[0] ? teamOf(alive[0].side) : null;
+    }
+  } else {
+    finished = alive.length <= 1;
+    if (finished) battle.winner = alive[0] || null;
+  }
+  if (finished) {
     battle.over = true;
-    battle.winner = alive[0] || null;
     const B = battle;
     setTimeout(() => { if (battle === B) showResult(); }, 950);
   } else {
@@ -957,20 +1309,40 @@ function updateBattle(dt) {
   const B = battle;
   B.time += dt;
   const L = B.left, R = B.right;
-  // 120 秒超时：零干预——直接按剩余血量比例判定胜负
-  if (B.time >= 120 && !B.over) {
+  // 120 秒超时：零干预——直接按剩余血量比例判定胜负（队伍模式按队伍总血量比例）
+  if (B.time >= BALANCE.global.maxTime && !B.over) {
     B.over = true;
     for (const o of B.orbs) { o.regenT = 0; o.cd = 0; } // 冻结回血/冷却，保证结算显示与判定时刻一致
     const alive = B.orbs.filter(o => o.alive);
-    let best = null;
-    for (const o of alive) if (!best || o.hp / o.maxHp > best.hp / best.maxHp) best = o;
-    const pct = alive.map(o => o.hp / o.maxHp);
-    const draw = alive.length > 0 && pct.every(p => Math.abs(p - pct[0]) < 1e-9);
-    B.winner = alive.length === 0 || draw ? null : best;
+    let best = null, draw = false, winnerTeam = null;
+    if (B.teams) {
+      const teamPct = {};
+      for (const o of alive) {
+        const t = teamOf(o.side);
+        teamPct[t] = (teamPct[t] || 0) + o.hp / o.maxHp;
+      }
+      const entries = Object.entries(teamPct);
+      const vals = entries.map(e => e[1]);
+      draw = vals.length === 0 || vals.every(v => Math.abs(v - vals[0]) < 1e-9);
+      let bt = null;
+      for (const [t, v] of entries) if (!bt || v > teamPct[bt]) bt = t;
+      winnerTeam = draw || !bt ? null : bt;
+      best = draw ? null : (alive.find(o => teamOf(o.side) === bt) || null); // 平局时 winner 必须为 null（showResult 走平局分支）
+    } else {
+      for (const o of alive) if (!best || o.hp / o.maxHp > best.hp / best.maxHp) best = o;
+      const pct = alive.map(o => o.hp / o.maxHp);
+      draw = alive.length > 0 && pct.every(p => Math.abs(p - pct[0]) < 1e-9);
+      best = alive.length === 0 || draw ? null : best;
+    }
+    B.winner = best;
+    B.winnerTeam = winnerTeam;
     const B2 = B;
     setTimeout(() => { if (battle === B2) showResult(); }, 950);
     return;
   }
+  // 玩法规则：缩圈状态机 + 障碍物坐标换算（超时后无需更新；无 rules 的调用方如模拟器按默认规则跳过）
+  if (B.rules && B.rules.shrink) updateShrink(B, dt);
+  if (B.rules && B.rules.obstacles !== 'none') updateObstacles(B, dt);
   // 移动 + 两两碰撞（2/3/4 球全排列）
   for (const o of B.orbs) if (o.alive) moveOrb(o, dt, nearestFoe(o));
   for (let i = 0; i < B.orbs.length; i++)
@@ -1018,8 +1390,8 @@ function updateBattle(dt) {
         B.vamp = null; // 墙边空间不足：吸身中断，避免卡死
       } else {
         A.x = ax; A.y = ay; C.x = cx; C.y = cy;
-        if (C.invT <= 0) C.hp -= 7.5 * dt; // 无敌期吸身不掉血
-        A.hp = Math.min(A.maxHp, A.hp + 5 * dt);
+        if (C.invT <= 0) C.hp -= 7.5 * dt * srcDmgMult(A); // 无敌期吸身不掉血；按吸血方倍率
+        A.hp = Math.min(A.maxHp, A.hp + 5 * dt * BALANCE.global.healMult * A.stats.healMult);
         if (Math.random() < .7) addFx({ type: 'spark', x: midx + rand(-20, 20), y: midy + rand(-20, 20), vx: rand(-20, 20), vy: rand(-40, -10), life: 0, maxLife: .5, size: 2.4, color: '#ff2244' });
         if (Math.random() < .3) addText(midx, midy - 42, '吸血', '#ff5060', 13);
       }
@@ -1048,19 +1420,27 @@ function updateBattle(dt) {
     if (!o.alive) continue;
     o.cd += dt;
     if (o.cd >= o.maxCd) fireAbility(o);
+    // 双能力：副能力独立 CD（+30% 惩罚在 maxCd2），伤害 ×0.5 由 castAbility 的 skillMul 处理
+    if (o.skill2) {
+      o.cd2 += dt;
+      if (o.cd2 >= o.maxCd2) { o.cd2 = 0; castAbility(o, o.skill2, .5); }
+    }
     if (o.shieldT > 0) o.shieldT -= dt;
     if (o.invT > 0) o.invT -= dt;
     if (o.rushT > 0) o.rushT -= dt;
     if (o.regenT > 0) {
       o.regenT -= dt;
-      o.hp = Math.min(o.maxHp, o.hp + 8 * dt);
+      o.hp = Math.min(o.maxHp, o.hp + 8 * dt * BALANCE.global.healMult * o.stats.healMult);
       if (Math.random() < .5) addFx({ type: 'spark', x: o.x + rand(-14, 14), y: o.y + rand(-14, 14), vx: rand(-30, 30), vy: rand(-70, -20), life: 0, maxLife: .5, size: 2, color: '#3dff9e' });
     }
     if (o.flash > 0) o.flash -= dt;
     // —— 新能力状态 ——
-    if (o.burnT > 0) { // 灼烧 DoT + 热浪 + 火星迸溅传染
+    if (o.burnT > 0) { // 灼烧 DoT + 热浪 + 火星迸溅传染（伤害按点燃者技能倍率）
       o.burnT -= dt;
-      if (o.invT <= 0) o.hp -= 3 * dt;
+      if (o.invT <= 0) {
+        const burnSrc = ownerOf(o.burnSrc);
+        o.hp -= 3 * dt * srcDmgMult(burnSrc);
+      }
       if (Math.random() < .5) addFx({ type: 'heat', x: o.x + rand(-28, 28), y: o.y + rand(-28, 28), life: 0, maxLife: .5, w: rand(16, 30) });
       if (Math.random() < .12) {
         const foe2 = nearestFoe(o);
@@ -1092,7 +1472,7 @@ function updateBattle(dt) {
     if (o.railT2 > 0) o.railT2 -= dt;
     if (o.railT3 > 0) o.railT3 -= dt;
     // 吸血鬼半血被动：每 2s 召唤追踪蝙蝠，每额外失去 10% 血量伤害 +2
-    if (o.ability === 'vampire' && o.alive && o.hp / o.maxHp < .5) {
+    if (hasAb(o, 'vampire') && o.alive && o.hp / o.maxHp < .5) {
       o.batT = (o.batT || 0) - dt;
       if (o.batT <= 0) {
         o.batT = 2;
@@ -1122,7 +1502,8 @@ function updateBattle(dt) {
         o.venomTick = (o.venomTick || 0) - dt;
         if (o.venomTick <= 0) {
           o.venomTick = 1;
-          o.hp -= o.venomN * 2;
+          const venomSrc = ownerOf(o.venomSrc);
+          o.hp -= o.venomN * 2 * srcDmgMult(venomSrc); // 按施毒者倍率
           addText(o.x + rand(-10, 10), o.y - 50, '毒-' + o.venomN * 2, '#9fe870', 13);
           addSparks(o.x, o.y, 3, '#9fe870');
         }
@@ -1130,7 +1511,7 @@ function updateBattle(dt) {
       if (o.venomT <= 0) o.venomN = 0;
     }
     // 星灵：身后留星轨（路过灼伤）
-    if (o.ability === 'star' && o.alive) {
+    if (hasAb(o, 'star') && o.alive) {
       o.starT = (o.starT || 0) - dt;
       if (o.starT <= 0) {
         o.starT = .12;
@@ -1139,7 +1520,7 @@ function updateBattle(dt) {
       }
     }
     // 幽灵强化：隐身期间持续释放速度随机的鬼魂（命中击退 + 范围伤害）
-    if (o.ability === 'ghost' && o.alive && o.ghostT > 0) {
+    if (hasAb(o, 'ghost') && o.alive && o.ghostT > 0) {
       o.ghostSpawnT = (o.ghostSpawnT || 0) - dt;
       if (o.ghostSpawnT <= 0) {
         o.ghostSpawnT = .2;
@@ -1148,7 +1529,7 @@ function updateBattle(dt) {
         B.proj.push({ type: 'wraith', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 2.5, r: 10, hitT: 0 });
       }
     }
-    if (o.ability === 'gunner' && o.gunMag > 0) { // 快枪手：装填待机，敌人进入四正方向窄带才极速连射
+    if (hasAb(o, 'gunner') && o.gunMag > 0) { // 快枪手：装填待机，敌人进入四正方向窄带才极速连射
       const foe2 = nearestFoe(o);
       // 四正方向量化 + 窄带判定（±20° 内才开火，防止无条件锁头）
       const raw = Math.atan2(foe2.y - o.y, foe2.x - o.x);
@@ -1166,7 +1547,7 @@ function updateBattle(dt) {
         }
       }
     }
-    if (o.ability === 'anchor' && o.wallHit) { // 切割球：撞墙留锚，双锚拉电缆
+    if (hasAb(o, 'anchor') && o.wallHit) { // 切割球：撞墙留锚，双锚拉电缆
       o.anchorPts = o.anchorPts || [];
       o.anchorPts.push({ x: o.wallHit.x, y: o.wallHit.y });
       o.wallHit = null;
@@ -1184,12 +1565,12 @@ function updateBattle(dt) {
         sfx('clash');
       }
     }
-    if (o.ability === 'idol') { // 偶像领域常驻（只保留最新，大范围）
+    if (hasAb(o, 'idol')) { // 偶像领域常驻（只保留最新，大范围）
       const rr = 220 + (1 - o.hp / o.maxHp) * 180;
       B.structs = B.structs.filter(s => !(s.type === 'zone' && s.kind === 'idol' && s.owner === o.side));
       B.structs.push({ type: 'zone', kind: 'idol', owner: o.side, x: o.x, y: o.y, r: rr, life: .3 });
     }
-    if (o.ability === 'drone') { // 浮游炮常驻三座 + 充能激光
+    if (hasAb(o, 'drone')) { // 浮游炮常驻三座 + 充能激光
       const ds = B.structs.filter(s => s.type === 'drone' && s.owner === o.side);
       for (let i = ds.length; i < 3; i++) {
         B.structs.push({ type: 'drone', owner: o.side, x: o.x, y: o.y, angle: i * TAU / 3, phase: i * TAU / 3, fireT: rand(0, .5), life: undefined });
@@ -1215,24 +1596,29 @@ function updateBattle(dt) {
       if (o.corrodeT > 0) { o.corrodeT -= dt; if (o.corrodeT <= 0) o.corrodeN = 0; } // 腐蚀易伤层过期
       if (o.corrodeSlowT > 0) { o.corrodeSlowT -= dt; if (o.corrodeSlowT <= 0) o.corrodeSlowN = 0; } // 腐蚀减速层过期
       if (o.vulnT > 0) o.vulnT -= dt; // 电线杆易伤
-      if (o.ability === 'coffin' && o.alive) { // 棺椁：失血阈值 → 封锁无球四分之一区（10% / 20% / 40%）
+      if (hasAb(o, 'coffin') && o.alive) { // 棺椁：失血阈值封锁 + 蝴蝶高频低数量生成
+        // 先封锁（新区落定），后生成蝴蝶——保证蝴蝶生成点避开包括本帧新封锁在内的全部封锁区
         const ratio = o.hp / o.maxHp;
         const stage = ratio < .6 ? 3 : ratio < .8 ? 2 : ratio < .9 ? 1 : 0;
         if (stage > o.coffinStage) {
           o.coffinStage = stage;
-          sealCoffinZone(o);
-          addText(o.x, o.y - 44, '⚰ 棺椁封锁', '#9a9ab0', 14);
-          sfx('coffin');
+          if (sealCoffinZone(o)) { // 成功封锁才播提示（全场已封满时返回 false）
+            addText(o.x, o.y - 44, '⚰ 棺椁封锁', '#9a9ab0', 14);
+            sfx('coffin');
+          }
+        }
+        // 每 2s 在随机未被封印的墙面生成 2 只黑白蝴蝶（高频低数量）
+        o.butterflyCd = (o.butterflyCd || 0) - dt;
+        if (o.butterflyCd <= 0) {
+          o.butterflyCd = 2;
+          spawnButterflies(o, 2);
+          if (Math.random() < .5) sfx('coffin'); // 音效节流
         }
       }
-      if (o.ability === 'coffin' && o.butterflyWall) { // 棺椁：撞墙散蝶
-        spawnButterflies(o, o.butterflyWall);
-        o.butterflyWall = null;
-      }
-      if ((o.ability === 'tech1' || o.ability === 'tech2') && o.techWall) { // 科技I/II：撞墙留激光台
+      if ((hasAb(o, 'tech1') || hasAb(o, 'tech2')) && o.techWall) { // 科技I/II：撞墙留激光台
         placeLaserTurret(o);
       }
-      if (o.ability === 'bond' && o.bondWall) { // 拘束：撞墙留锚（上限 8 个）
+      if (hasAb(o, 'bond') && o.bondWall) { // 拘束：撞墙留锚（上限 8 个）
         o.bondPts = o.bondPts || [];
         o.bondPts.push({ x: o.bondWall.x, y: o.bondWall.y });
         while (o.bondPts.length > 8) o.bondPts.shift();
@@ -1241,10 +1627,10 @@ function updateBattle(dt) {
         addText(o.x, o.y - 40, '⛓ 锚点×' + o.bondPts.length, '#d8c8ff', 13);
         sfx('bond');
       }
-      if (o.ability === 'bond' && o.bondPts && o.bondPts.length) { // 拘束：绳索持续伤害经过的敌人
+      if (hasAb(o, 'bond') && o.bondPts && o.bondPts.length) { // 拘束：绳索持续伤害经过的敌人（不伤队友）
         for (const pt of o.bondPts) {
           for (const f of B.orbs) {
-            if (f === o || !f.alive || f.invT > 0) continue;
+            if (f === o || !f.alive || f.invT > 0 || !isFoe(o, f)) continue;
             if (distToSeg(f.x, f.y, pt.x, pt.y, o.x, o.y) < f.r + 10) {
               o.bondHitT = (o.bondHitT || 0) - dt;
               if (o.bondHitT <= 0) {
@@ -1257,7 +1643,7 @@ function updateBattle(dt) {
           }
         }
       }
-      if (o.ability === 'techx' && o.alive) { // 科技X：常驻 6 圈激光环；失去 50% 血量后转 6 条旋转激光柱
+      if (hasAb(o, 'techx') && o.alive) { // 科技X：常驻 6 圈激光环；失去 50% 血量后转 6 条旋转激光柱
         o.techxRot = (o.techxRot || 0) + dt * 2.2;
         const beams = o.hp / o.maxHp < .5;
         const old = B.structs.find(s => (s.type === 'laserring' || s.type === 'laserbeams') && s.owner === o.side);
@@ -1268,9 +1654,9 @@ function updateBattle(dt) {
   }
   // 投射物
   const F = fieldRect();
-  // 追踪弹目标选择：本体或替身（替身更近则锁定替身，实现骗弹）
+  // 追踪弹目标选择：本体或替身（替身更近则锁定替身，实现骗弹；队友替身不骗弹）
   const pickTrackTarget = (p, foe) => {
-    const clones = B.proj.filter(c => c.type === 'clone' && c.owner !== p.owner && c.life > 0); // 敌方替身才骗弹
+    const clones = B.proj.filter(c => c.type === 'clone' && c.owner !== p.owner && c.life > 0 && (!B.teams || teamOf(c.owner) !== teamOf(p.owner))); // 敌方替身才骗弹
     if (!clones.length) return { t: foe, isClone: false };
     const dF = Math.hypot(foe.x - p.x, foe.y - p.y);
     const dC = Math.hypot(clones[0].x - p.x, clones[0].y - p.y);
@@ -1367,8 +1753,8 @@ function updateBattle(dt) {
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (owner.alive && Math.hypot(owner.x - p.x, owner.y - p.y) < owner.r + p.r) { // 收回
           p.life = 0;
-          if (p.hitFoe) { // 命中过敌人 → 重置 cd
-            owner.cd = owner.maxCd;
+          if (p.hitFoe) { // 命中过敌人 → 重置对应槽位 CD（主能力 / 副能力）
+            if (p.skill2) owner.cd2 = owner.maxCd2; else owner.cd = owner.maxCd;
             addText(owner.x, owner.y - 40, '镖回收 · CD 重置', '#ffe9a0', 13);
             sfx('boomerang');
           }
@@ -1427,7 +1813,7 @@ function updateBattle(dt) {
         const own = ownerOf(p.owner);
         hitOrb(foe, 10, own, true);
         own.fangCd = Math.max(.8, (own.fangCd || 3) - .3); // 命中永久缩短射击间隔（独立字段，下限 0.8）
-        own.maxCd = own.fangCd;
+        if (!p.skill2) own.maxCd = own.fangCd; // 副能力箭矢不干扰主能力动态 CD
         addText(foe.x, foe.y - 34, '兽牙命中 · 间隔-' + own.fangCd.toFixed(1), '#ffe9a0', 12);
         addSparks(p.x, p.y, 5, '#ffe9a0');
       }
@@ -1519,6 +1905,7 @@ function updateBattle(dt) {
       if (foe.alive && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + p.r + 4) {
         p.life = 0;
         foe.burnT = Math.max(foe.burnT, 4);
+        foe.burnSrc = p.owner; // 记录点燃者
         addSparks(p.x, p.y, 5, '#ff8833');
       }
     }
@@ -1552,7 +1939,7 @@ function updateBattle(dt) {
       }
       if (p.grace <= 0 && own.alive && Math.hypot(own.x - p.x, own.y - p.y) < own.r + p.r) { // 与本体融合
         p.life = 0;
-        own.hp = Math.min(own.maxHp, own.hp + 8);
+        own.hp = Math.min(own.maxHp, own.hp + 8 * BALANCE.global.healMult * own.stats.healMult);
         addText(own.x, own.y - 34, '+8 融合', '#3dff9e', 14);
         addRing(p.x, p.y, 36, p.color, 2);
       }
@@ -1569,8 +1956,8 @@ function updateBattle(dt) {
         addFx({ type: 'spark', x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr, vx: Math.cos(a + Math.PI / 2) * 120, vy: Math.sin(a + Math.PI / 2) * 120, life: 0, maxLife: .4, size: 2.4, color: '#cfe9ff' });
       }
       const owner2 = ownerOf(p.owner);
-      for (const ob of B.orbs) { // 切向偏转（只偏转敌方：施放者不受自己旋风影响）
-        if (ob === owner2 || !ob.alive) continue;
+      for (const ob of B.orbs) { // 切向偏转（只偏转敌方：施放者与队友不受自己旋风影响）
+        if (ob === owner2 || !ob.alive || !isFoe(owner2, ob)) continue;
         const dx = ob.x - p.x, dy = ob.y - p.y;
         const d = Math.hypot(dx, dy);
         if (d > 1 && d < p.r + ob.r + 60) {
@@ -1615,6 +2002,7 @@ function updateBattle(dt) {
         p.life = 0;
         foe.venomN = Math.min(5, foe.venomN + 1);
         foe.venomT = 8;
+        foe.venomSrc = p.owner; // 记录施毒者
         addSparks(p.x, p.y, 4, '#9fe870');
       }
     }
@@ -1639,7 +2027,7 @@ function updateBattle(dt) {
       const foe = nearestFoe(ownerOf(p.owner));
       if (foe.alive && p.hitT <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + p.r) {
         p.hitT = 1;
-        hitOrb(foe, 8, ownerOf(p.owner), true); // 碰撞伤害
+        hitOrb(foe, 8, ownerOf(p.owner), true); // 召唤物伤害（按技能伤害倍率 skillMult，与幻影/分裂子球一致）
         const dx = foe.x - p.x, dy = foe.y - p.y;
         const dd = Math.hypot(dx, dy) || 1;
         foe.vx += dx / dd * 260; foe.vy += dy / dd * 260; // 击退
@@ -1684,28 +2072,49 @@ function updateBattle(dt) {
       }
     }
     // —— V8 投射物 ——
-    if (p.type === 'cursenail') { // 诅咒之钉：命中钉住敌人继续飞行（拖着敌人），直到撞墙触发诅咒之火
+    if (p.type === 'cursenail') { // 诅咒之钉：命中钉住敌人拖向墙；撞墙后钉子钉入墙体继续钉住敌人并燃起诅咒之火
+      if (p.stuck) { // 已钉入墙体：位置固定，存续到期后拔出释放被钉目标
+        p.angle = (p.angle || 0) + dt * 2;
+        if (p.life <= 0) {
+          for (const o of releasePinned(p)) {
+            addText(o.x, o.y - 44, '钉子拔出', '#cfe0ff', 14);
+            addSparks(o.x, o.y, 6, '#c07aff');
+          }
+        }
+        continue;
+      }
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.angle = (p.angle || 0) + dt * 4;
       if (Math.random() < .5) addFx({ type: 'spark', x: p.x, y: p.y, vx: rand(-6, 6), vy: rand(-6, 6), life: 0, maxLife: .2, size: 2, color: '#c07aff' });
       const owner = ownerOf(p.owner);
       const hitWall = p.x < F.x + p.r || p.x > F.x + F.s - p.r || p.y < F.y + p.r || p.y > F.y + F.s - p.r;
-      if (hitWall || p.life <= 0) { // 撞墙（或寿命耗尽兜底）：释放被钉目标 + 生成逐渐变大的诅咒火焰圈
-        p.life = 0;
-        for (const o of B.orbs) if (o.pinned === p) { o.pinned = null; o.pinT = 0; addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13); }
+      if (hitWall) { // 撞墙：钉着敌人 → 钉子钉入墙体（敌人保持被钉住）；空钉 → 释放消失。两者都燃起诅咒火焰
         const wx = clamp(p.x, F.x + p.r, F.x + F.s - p.r), wy = clamp(p.y, F.y + p.r, F.y + F.s - p.r);
+        if (p.hitFoe) {
+          // 钉子钉在墙上继续存在：被钉敌人锁在墙上（活靶子），墙钉 3.2s 后拔出
+          p.x = wx; p.y = wy; p.vx = 0; p.vy = 0;
+          p.stuck = true; p.life = 3.2;
+          addRing(wx, wy, 46, '#c07aff', 2.5);
+          addText(wx, wy - 44, '⛏ 钉入墙体', '#c07aff', 15);
+          sfx('clash');
+        } else {
+          p.life = 0;
+          for (const o of releasePinned(p)) addText(o.x, o.y - 40, '钉子入墙', '#cfe0ff', 13);
+        }
         B.structs.push({ type: 'cursefire', owner: p.owner, x: wx, y: wy, r: 40, life: 3.2, hitT: 0 });
         addFx({ type: 'ring', x: wx, y: wy, r: 20, vr: 420, maxLife: .45, life: 0, color: '#c07aff', lw: 3.5 });
         addText(wx, wy - 36, '诅咒火焰', '#c07aff', 14);
         sfx('boom');
+      } else if (p.life <= 0) { // 未撞墙寿命耗尽（兜底）：释放被钉目标
+        for (const o of releasePinned(p)) addText(o.x, o.y - 40, '钉子脱落', '#cfe0ff', 13);
       } else if (!p.hitFoe) { // 未钉人时探测敌人；命中后钉子继续飞行（不销毁），把敌人钉在钉子上拖向墙面
         // 命中零伤害（纯控制）：伤害由撞墙后的诅咒火焰圈结算
         for (const o of B.orbs) {
-          if (o === owner || !o.alive || o.pinned) continue; // 已钉住的球不被第二颗钉覆盖
+          if (o === owner || !o.alive || o.pinned || !isFoe(owner, o)) continue; // 已钉住的球不被第二颗钉覆盖；不钉队友
           if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
             if (o.invT <= 0) {
               p.hitFoe = true; // 防同一钉子每帧重复命中
-              o.pinned = p; o.pinT = 999; // 钉住直到钉子撞墙（无超时松开）
+              o.pinned = p; o.pinT = 999; // 钉住直到钉子钉入墙体（无超时松开）
               addText(o.x, o.y - 44, '➳ 被钉住!', '#c07aff', 15);
               addRing(o.x, o.y, 50, '#c07aff', 2.5);
               sfx('curse');
@@ -1723,7 +2132,7 @@ function updateBattle(dt) {
       addFx({ type: 'spark', x: p.x, y: p.y, vx: rand(-4, 4), vy: rand(-4, 4), life: 0, maxLife: .15, size: 2.2, color: '#6fe8ff' });
       const owner = ownerOf(p.owner);
       for (const o of B.orbs) {
-        if (o === owner || !o.alive) continue;
+        if (o === owner || !o.alive || !isFoe(owner, o)) continue;
         if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r + 2) {
           p.life = 0;
           hitOrb(o, p.dmg, owner, true);
@@ -1738,7 +2147,7 @@ function updateBattle(dt) {
       if (p.x < F.x + 4 || p.x > F.x + F.s - 4 || p.y < F.y + 4 || p.y > F.y + F.s - 4) { p.life = 0; continue; }
       const owner = ownerOf(p.owner);
       for (const o of B.orbs) {
-        if (o === owner || !o.alive || o.invT > 0) continue;
+        if (o === owner || !o.alive || o.invT > 0 || !isFoe(owner, o)) continue;
         if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r + 2) {
           p.life = 0;
           hitOrb(o, 2, owner, true);
@@ -1767,7 +2176,7 @@ function updateBattle(dt) {
       if (Math.random() < .5) addFx({ type: 'spark', x: p.x, y: p.y, vx: rand(-4, 4), vy: rand(-4, 4), life: 0, maxLife: .25, size: 1.6, color: p.black ? '#c8c8d8' : '#ffffff' });
       if (owner && owner.alive && Math.hypot(owner.x - p.x, owner.y - p.y) < owner.r + 8) { p.life = 0; continue; } // 回归本体消失
       for (const o of B.orbs) {
-        if (o === owner || !o.alive) continue;
+        if (o === owner || !o.alive || !isFoe(owner, o)) continue;
         if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r + 2) {
           p.life = 0;
           if (o.invT <= 0) hitOrb(o, 6, owner, true);
@@ -1779,9 +2188,24 @@ function updateBattle(dt) {
   }
   B.proj = B.proj.filter(p => p.life > 0);
   updateFx(dt);
-  // 死亡检查：DoT/领域/吸血击杀统一走结算（多球时出局但战斗继续，直到只剩 1 球）
-  for (const o of B.orbs) {
-    if (o.hp <= 0 && !B.over) killOrb(o);
+  // 死亡检查：DoT/领域/吸血/缩圈灼伤击杀统一走结算（多球时出局但战斗继续，直到只剩 1 球）
+  // 同帧多球死亡：全部存活球同时死亡 → 平局（避免 killOrb 逐个结算把"后死尸体"误判为胜者）
+  const dead = B.orbs.filter(o => o.alive && o.hp <= 0);
+  if (dead.length) {
+    // 平局分支故意不设 !B.over 守卫：同帧先有球被即时结算判胜、后另一球也死于 DoT/灼伤时，
+    // 覆盖已定胜者为平局是修正而非错误（双方确实同帧阵亡）；若加守卫则会把"已死的胜者"误判为胜
+    if (dead.length === B.orbs.filter(o => o.alive).length) {
+      for (const o of dead) {
+        o.hp = 0; o.alive = false;
+        if (o.pinned) o.pinned.hitFoe = false; // 与 killOrb 一致的钉标记清理
+        boom(o);
+      }
+      B.over = true; B.winner = null;
+      const B2 = B;
+      setTimeout(() => { if (battle === B2) showResult(); }, 950);
+    } else {
+      dead.forEach(o => killOrb(o));
+    }
   }
   if (B.shake > 0) B.shake *= Math.pow(.02, dt); // 快速衰减
   if (B.shake < .3) B.shake = 0;

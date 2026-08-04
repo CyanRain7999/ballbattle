@@ -2,7 +2,7 @@
 function statusOf(o) {
   const s = [];
   if (battle.vamp && battle.vamp.t > 0 && (battle.vamp.src === o || battle.vamp.foe === o)) s.push('🩸 吸身');
-  if (o.ability === 'vampire' && o.hp / o.maxHp < .5) s.push('🦇 蝙蝠 ' + (o.batT > 0 ? o.batT.toFixed(1) : '待命'));
+  if (hasAb(o, 'vampire') && o.hp / o.maxHp < .5) s.push('🦇 蝙蝠 ' + (o.batT > 0 ? o.batT.toFixed(1) : '待命'));
   if (o.burnT > 0) s.push('🔥 ' + o.burnT.toFixed(1) + 's');
   if (o.slowT > 0) s.push('❄ ' + o.slowT.toFixed(1) + 's');
   if (o.venomN > 0) s.push('☣ 毒×' + o.venomN + ' ' + Math.ceil(o.venomT) + 's');
@@ -10,15 +10,15 @@ function statusOf(o) {
   if (o.webT > 0) s.push('⌘ 网缚');
   if (o.webVulnT > 0) s.push('💢 易伤 ' + o.webVulnT.toFixed(1) + 's');
   if (o.stunT > 0) s.push('♨ 喷发中');
-  if (o.ability === 'evolve') s.push('🧬 Lv.' + (o.evolveLv || 0) + ' 经验' + (o.evolveX || 0) + '/3' + (o.evolveBoost > 0 ? '⚡' : ''));
+  if (hasAb(o, 'evolve')) s.push('🧬 Lv.' + (o.evolveLv || 0) + ' 经验' + (o.evolveX || 0) + '/3' + (o.evolveBoost > 0 ? '⚡' : ''));
   if (o.lanceT > 0) s.push('↯ 冲锋中');
   if (o.comboN > 0) s.push('连击×' + o.comboN + (o.comboX > 0 ? '⚡' : ''));
   if (o.shieldT > 0) s.push('护盾');
   if (o.invT > 0) s.push('🛡 无敌 ' + o.invT.toFixed(1) + 's');
   if (o.rushT > 0) s.push('狂暴');
   if (o.regenT > 0) s.push('修复');
-  if (o.ability === 'drone') s.push('充能 ' + o.charge + '/12' + (o.chargeUp > 0 ? ' 蓄力!' : ''));
-  if (o.ability === 'idol') s.push('领域');
+  if (hasAb(o, 'drone')) s.push('充能 ' + o.charge + '/12' + (o.chargeUp > 0 ? ' 蓄力!' : ''));
+  if (hasAb(o, 'idol')) s.push('领域');
   if (o.portalCd > 0) s.push('传送冷却');
   // V8 状态
   if (o.pinned) s.push('➳ 被钉住');
@@ -27,9 +27,9 @@ function statusOf(o) {
   if (o.vulnT > 0) s.push('⚡ 易伤 ' + o.vulnT.toFixed(1) + 's');
   if (o.liquidHp > 0) s.push('◍ 液袋 ' + Math.ceil(o.liquidHp));
   if (o.atkBonus > 0) s.push('攻+' + o.atkBonus);
-  if (o.ability === 'bond' && o.bondPts && o.bondPts.length > 0) s.push('⛓ 锚×' + o.bondPts.length);
-  if (o.ability === 'coffin') s.push('⚰ 档' + (o.coffinStage || 0) + '/3');
-  if (o.ability === 'techx') s.push(o.hp / o.maxHp < .5 ? '✳ 光柱' : '✳ 护环');
+  if (hasAb(o, 'bond') && o.bondPts && o.bondPts.length > 0) s.push('⛓ 锚×' + o.bondPts.length);
+  if (hasAb(o, 'coffin')) s.push('⚰ 档' + (o.coffinStage || 0) + '/3');
+  if (hasAb(o, 'techx')) s.push(o.hp / o.maxHp < .5 ? '✳ 光柱' : '✳ 护环');
   return s.join(' ');
 }
 // 名字下方的小球本体预览：用 drawOrb 实时绘制颜色/装饰/底纹，
@@ -54,6 +54,14 @@ function updateHUD() {
     hpEl.style.width = hpPct + '%';
     $('#hpnum-' + s).textContent = Math.round(hpPct) + '%';
     $('#cd-' + s).style.width = Math.min(100, o.cd / o.maxCd * 100) + '%';
+    // 双能力：副能力独立 CD 条（无副能力时隐藏）
+    const row2 = $('#cdrow2-' + s);
+    if (row2) {
+      if (o.skill2) {
+        row2.style.display = 'flex';
+        $('#cd2-' + s).style.width = Math.min(100, o.cd2 / o.maxCd2 * 100) + '%';
+      } else row2.style.display = 'none';
+    }
     // 轨道炮双模式独立进度条
     const row = $('#railrow-' + s);
     if (row) {

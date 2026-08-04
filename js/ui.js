@@ -82,16 +82,36 @@ function showResult() {
   g.clearRect(0, 0, 200, 200);
   const drawMini = (o, x, y, r) => drawOrb(g, { x, y, r, angle: Math.PI / 6, color: o.color, decor: o.decor, history: null, shieldT: 0, rushT: 0, flash: 0 }, performance.now() / 1000);
   if (w) {
-    title.textContent = w.name + ' 胜利';
+    const team = battle.winnerTeam;
+    title.textContent = team ? TEAM_LABELS[team] + ' 胜利' : w.name + ' 胜利';
     title.style.color = w.color.main;
-    $('#result-sub').textContent = `${w.name} · 剩余生命 ${Math.max(0, Math.round(w.hp / w.maxHp * 100))}% · 用时 ${fmtTime(battle.time)}`;
+    if (team) { // 队伍模式：子标题显示胜队剩余总血量比例
+      const tOrbs = battle.orbs.filter(o => o.alive && teamOf(o.side) === team);
+      const pct = tOrbs.reduce((s, o) => s + o.hp / o.maxHp, 0) / (tOrbs.length || 1) * 100;
+      $('#result-sub').textContent = `${TEAM_LABELS[team]} · 剩余生命 ${Math.max(0, Math.round(pct))}% · 用时 ${fmtTime(battle.time)}`;
+    } else {
+      $('#result-sub').textContent = `${w.name} · 剩余生命 ${Math.max(0, Math.round(w.hp / w.maxHp * 100))}% · 用时 ${fmtTime(battle.time)}`;
+    }
     drawMini(w, 100, 100, 72);
   } else { // 平局（120 秒超时且剩余血量相同；多球模式所有存活球并列显示）
     title.textContent = '平局 DRAW';
     title.style.color = '#cfe8ff';
     const alive = battle.orbs.filter(o => o.alive);
     const shown = alive.length ? alive : battle.orbs;
-    const sub = shown.map(o => o.name + ' ' + Math.max(0, Math.round(o.hp / o.maxHp * 100)) + '%').join(' · ');
+    let sub;
+    if (battle.teams) { // 队伍平局：按队伍总血量比例
+      if (alive.length === 0) sub = '双方全部阵亡'; // 全灭平局（shown 此时为全部阵亡球）
+      else {
+        const teamPct = {};
+        for (const o of shown) {
+          const t = teamOf(o.side);
+          teamPct[t] = (teamPct[t] || 0) + o.hp / o.maxHp;
+        }
+        sub = Object.entries(teamPct).map(([t, v]) => `${TEAM_LABELS[t] || t} ${(v * 100 / (battle.teams[t].length || 1)).toFixed(0)}%`).join(' · ');
+      }
+    } else {
+      sub = shown.map(o => o.name + ' ' + Math.max(0, Math.round(o.hp / o.maxHp * 100)) + '%').join(' · ');
+    }
     $('#result-sub').textContent = `双方剩余生命持平 ${sub} · 用时 ${fmtTime(battle.time)}`;
     if (shown.length === 1) drawMini(shown[0], 100, 100, 72);
     else if (shown.length === 2) { drawMini(shown[0], 78, 100, 52); drawMini(shown[1], 122, 100, 52); }
@@ -132,6 +152,20 @@ document.querySelectorAll('#mode-switch .mode-btn').forEach(b => {
   b.onclick = () => {
     gameMode = +b.dataset.mode;
     buildPanels();
+    sfx('ui');
+  };
+});
+// 玩法规则按钮：缩圈/双能力 = 开关；障碍 = 循环切换布局（none→十字墙→四角块→迷宫块→旋转隔板）
+document.querySelectorAll('#rules-switch .rule-btn').forEach(b => {
+  b.onclick = () => {
+    const r = b.dataset.rule;
+    if (r === 'obstacles') {
+      const order = ['none', 'cross', 'corners', 'blocks', 'spinner', 'grid3', 'ring', 'slalom', 'random', 'randomsym'];
+      gameRules.obstacles = order[(order.indexOf(gameRules.obstacles) + 1) % order.length];
+    } else {
+      gameRules[r] = !gameRules[r];
+    }
+    syncRulesUI();
     sfx('ui');
   };
 });

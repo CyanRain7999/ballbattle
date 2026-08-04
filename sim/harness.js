@@ -111,7 +111,8 @@ function createSandbox(opts = {}) {
   vm.createContext(sandbox);
 
   // draw.js 的装饰绘制函数：仅被 data.js 顶层（DECORS 数组）引用，headless 无需真实实现
-  for (const fn of ['drawDecRing', 'drawDecSpike', 'drawDecStripe', 'drawDecHex', 'drawDecCross']) {
+  for (const fn of ['drawDecRing', 'drawDecSpike', 'drawDecStripe', 'drawDecHex', 'drawDecCross',
+    'drawDecDiamond', 'drawDecStar', 'drawDecMoon', 'drawDecGear', 'drawDecBolt', 'drawDecHalo']) {
     sandbox[fn] = () => {};
   }
 

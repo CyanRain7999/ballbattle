@@ -23,10 +23,19 @@
     <button class="mode-btn sel" data-mode="2">双球 2P</button>
     <button class="mode-btn" data-mode="3">三球 3P</button>
     <button class="mode-btn" data-mode="4">四球 4P</button>
+    <button class="mode-btn" data-mode="5">2V2 团战</button>
+    <button class="mode-btn" data-mode="6">4V1 BOSS</button>
+  </div>
+  <div class="rules-switch" id="rules-switch">
+    <button class="rule-btn" data-rule="shrink" title="每 20s 场地内缩一级（最多 3 级），贴圈持续灼伤">⏳ 缩圈 SHRINK</button>
+    <button class="rule-btn" data-rule="obstacles" title="点击切换：十字墙 / 四角块 / 迷宫块 / 旋转隔板">▣ 障碍 OBSTACLE</button>
+    <button class="rule-btn" data-rule="multiSkill" title="每个球可选主能力 + 副能力（副能力 CD+30%、伤害 ×0.5）">❖ 双能力 DUAL</button>
   </div>
   <div class="select-body" id="select-body"></div>
   <div class="multi-actions" id="multi-actions" style="display:none">
+    <div class="multi-hint" id="multi-hint"></div>
     <button class="btn" id="btn-random2">⚄ 随机配置</button>
+    <button class="btn" id="btn-balance">⚙ 数值</button>
     <button class="btn primary" id="btn-start2">▶ 启动战斗</button>
   </div>
 </div>
@@ -76,6 +85,7 @@
   <script src="js/core.js"></script>
   <script src="js/draw.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/balance.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/effects.js"></script>
   <script src="js/select.js"></script>

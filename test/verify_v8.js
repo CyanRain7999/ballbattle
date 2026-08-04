@@ -411,7 +411,7 @@ async function main() {
     '四球 HUD 显示 4P 混战': !!mode4 && /4P/.test(mode4.vsText || ''),
     '出局球不重放死亡（alive 守卫）': !!outChk && !outChk.alive && !outChk.over && outChk.survivors === 2 && outChk.shake < 8 && outChk.fxGrowth,
     '科技X 激光命中节流（1.2s 伤害有限）': !!laserThrottleChk && laserThrottleChk.dmg > 5 && laserThrottleChk.dmg < 150 && laserThrottleChk.alive,
-    '模式切换按钮（3 个）': !!switch2 && switch2.modes === 3,
+    '模式切换按钮（5 个：2P/3P/4P/2V2/BOSS）': !!switch2 && switch2.modes === 5,
     '模式切换：3P 面板 3 个 + 网格': !!switch3 && switch3.panels === 3 && switch3.multi,
     '模式切换：4P 面板 4 个': switch4 === 4,
     '模式切换：回到 2P 面板 2 个': !!switch2 && switch2.panels === 2 && !switch2.multi && switch2.sel2,

@@ -107,6 +107,112 @@ function drawDecCross(ctx, o) {
   ctx.restore();
 }
 
+// —— 扩充装饰（与 select 预览共用，签名 (ctx, o)，o.angle 驱动旋转动画）——
+function drawDecDiamond(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.angle);
+  const dia = (Rr, rot) => {
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * TAU + rot + Math.PI / 4;
+      const px = Math.cos(a) * Rr, py = Math.sin(a) * Rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+  };
+  ctx.globalAlpha = .95; ctx.strokeStyle = o.color.bright; ctx.lineWidth = 2;
+  dia(o.r * .74, 0); ctx.stroke();
+  ctx.globalAlpha = .55; ctx.lineWidth = 1.3;
+  dia(o.r * .5, o.angle * .7); ctx.stroke(); // 内层反向旋转
+  // 四角亮点
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .9;
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * TAU + Math.PI / 4;
+    ctx.beginPath(); ctx.arc(Math.cos(a) * o.r * .74, Math.sin(a) * o.r * .74, 2, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawDecStar(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.angle * .8);
+  const star = (Rr, rot) => {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = i / 10 * TAU + rot;
+      const rr = i % 2 === 0 ? Rr : Rr * .45;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+  };
+  ctx.globalAlpha = .95; ctx.strokeStyle = o.color.bright; ctx.lineWidth = 2;
+  star(o.r * .64, -Math.PI / 2); ctx.stroke();
+  ctx.globalAlpha = .55; ctx.lineWidth = 1.2;
+  star(o.r * .42, -Math.PI / 2 + o.angle * .5); ctx.stroke(); // 内层反向旋转
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .9;
+  ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawDecMoon(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.angle * .6);
+  ctx.strokeStyle = o.color.bright; ctx.lineWidth = Math.max(1.8, o.r * .06); ctx.globalAlpha = .9;
+  ctx.beginPath(); ctx.arc(0, 0, o.r * .78, -.9, .9); ctx.stroke(); // 上弧
+  ctx.globalAlpha = .6;
+  ctx.beginPath(); ctx.arc(o.r * .32, 0, o.r * .64, Math.PI - .7, Math.PI + .7); ctx.stroke(); // 错位下弧 → 月牙交错
+  // 弧端亮点
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .9;
+  for (const aa of [-.9, .9]) {
+    ctx.beginPath(); ctx.arc(Math.cos(aa) * o.r * .78, Math.sin(aa) * o.r * .78, 2.2, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawDecGear(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.angle * .5);
+  const teeth = 8;
+  ctx.strokeStyle = o.color.bright; ctx.globalAlpha = .95; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < teeth * 2; i++) {
+    const a = i / (teeth * 2) * TAU;
+    const rr = i % 2 === 0 ? o.r * .8 : o.r * .56;
+    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.closePath(); ctx.stroke();
+  ctx.globalAlpha = .5; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(0, 0, o.r * .4, 0, TAU); ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .9;
+  ctx.beginPath(); ctx.arc(0, 0, 2.4, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawDecBolt(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(Math.PI / 4 + Math.sin(o.angle * 2) * .15); // 缓慢摆动
+  ctx.fillStyle = o.color.bright; ctx.globalAlpha = .9;
+  ctx.beginPath();
+  ctx.moveTo(o.r * .3, -o.r * .8);
+  ctx.lineTo(-o.r * .34, o.r * .12);
+  ctx.lineTo(-o.r * .06, o.r * .12);
+  ctx.lineTo(-o.r * .3, o.r * .8);
+  ctx.lineTo(o.r * .34, -o.r * .12);
+  ctx.lineTo(o.r * .06, -o.r * .12);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = .4; ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.restore();
+}
+function drawDecHalo(ctx, o) {
+  ctx.save(); ctx.translate(o.x, o.y);
+  ctx.strokeStyle = o.color.bright; ctx.globalAlpha = .85; ctx.lineWidth = Math.max(1.4, o.r * .045);
+  ctx.save(); ctx.rotate(o.angle * .4);
+  ctx.beginPath(); ctx.ellipse(0, 0, o.r * 1.22, o.r * .42, 0, 0, TAU); ctx.stroke(); // 赤道环
+  ctx.restore();
+  ctx.save(); ctx.rotate(-o.angle * .3);
+  ctx.globalAlpha = .5;
+  ctx.beginPath(); ctx.ellipse(0, 0, o.r * .42, o.r * 1.22, 0, 0, TAU); ctx.stroke(); // 经线环
+  ctx.restore();
+  ctx.globalAlpha = .95;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
 // ---------------- 球绘制（精美 2D 平面风格） ----------------
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
@@ -966,6 +1072,56 @@ function drawStructs() {
   }
 }
 
+// ---------------- 模式绘制：障碍物 ----------------
+// 障碍物在 battle.js 中每帧换算为绝对坐标（battle.obstAbs），缩圈时随场地缩放
+function drawObstacles() {
+  const B = battle;
+  if (!B || !B.obstAbs || !B.obstAbs.length) return;
+  const t = B.time;
+  for (const ob of B.obstAbs) {
+    if (ob.kind === 'seg') {
+      // 旋转隔板：发光杆 + 端点轴心
+      bctx.save();
+      bctx.strokeStyle = 'rgba(140,190,255,.95)'; bctx.lineWidth = 10;
+      bctx.shadowColor = '#7fa8ff'; bctx.shadowBlur = 12;
+      bctx.lineCap = 'round';
+      bctx.beginPath(); bctx.moveTo(ob.x1, ob.y1); bctx.lineTo(ob.x2, ob.y2); bctx.stroke();
+      bctx.shadowBlur = 0;
+      bctx.strokeStyle = 'rgba(255,255,255,.8)'; bctx.lineWidth = 3;
+      bctx.beginPath(); bctx.moveTo(ob.x1, ob.y1); bctx.lineTo(ob.x2, ob.y2); bctx.stroke();
+      for (const [px, py] of [[ob.x1, ob.y1], [ob.x2, ob.y2]]) {
+        bctx.fillStyle = '#cfe4ff';
+        bctx.beginPath(); bctx.arc(px, py, 6, 0, TAU); bctx.fill();
+        bctx.fillStyle = '#fff';
+        bctx.beginPath(); bctx.arc(px, py, 2.5, 0, TAU); bctx.fill();
+      }
+      bctx.restore();
+    } else {
+      // 矩形障碍：发光边框 + 半透明填充 + 扫描线
+      bctx.save();
+      bctx.fillStyle = 'rgba(28,48,92,.55)';
+      bctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      bctx.strokeStyle = 'rgba(140,190,255,.95)'; bctx.lineWidth = 2.5;
+      bctx.shadowColor = '#7fa8ff'; bctx.shadowBlur = 10;
+      bctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      bctx.shadowBlur = 0;
+      bctx.strokeStyle = 'rgba(160,220,255,.5)'; bctx.lineWidth = 1;
+      const off = (t * 26) % 18;
+      bctx.beginPath();
+      for (let yy = ob.y + off - 18; yy < ob.y + ob.h; yy += 18) {
+        bctx.moveTo(ob.x, yy); bctx.lineTo(ob.x + ob.w, yy);
+      }
+      bctx.stroke();
+      // 中心标记
+      bctx.fillStyle = 'rgba(200,230,255,.85)';
+      bctx.font = 'bold 14px Consolas, monospace';
+      bctx.textAlign = 'center'; bctx.textBaseline = 'middle';
+      bctx.fillText('▣', ob.x + ob.w / 2, ob.y + ob.h / 2 + 1);
+      bctx.restore();
+    }
+  }
+}
+
 // ---------------- 战斗绘制 ----------------
 function drawBattle() {
   const B = battle;
@@ -1041,6 +1197,26 @@ function drawBattle() {
     bctx.beginPath(); bctx.arc(px, py, 2.5, 0, TAU); bctx.fill();
     bctx.restore();
   });
+  // 模式绘制：缩圈遮罩（圈外压暗 + 警示线）与障碍物
+  if (B.rules && B.rules.shrink && B.fieldFull) {
+    const F0 = B.fieldFull;
+    if (F.s < F0.s - .5 || Math.abs(F.x - F0.x) > .5) {
+      bctx.save();
+      bctx.fillStyle = 'rgba(255,45,80,.10)';
+      bctx.fillRect(F0.x, F0.y, F0.s, F.y - F0.y); // 上
+      bctx.fillRect(F0.x, F.y + F.s, F0.s, F0.y + F0.s - (F.y + F.s)); // 下
+      bctx.fillRect(F0.x, F.y, F.x - F0.x, F.s); // 左
+      bctx.fillRect(F.x + F.s, F.y, F0.x + F0.s - (F.x + F.s), F.s); // 右
+      bctx.strokeStyle = 'rgba(255,45,80,.9)'; bctx.lineWidth = 2.5;
+      bctx.shadowColor = '#ff2d50'; bctx.shadowBlur = 14;
+      bctx.setLineDash([14, 10]); bctx.lineDashOffset = -t * 60;
+      bctx.strokeRect(F.x, F.y, F.s, F.s);
+      bctx.setLineDash([]);
+      bctx.restore();
+    }
+  }
+  // 障碍物（十字墙/角块/迷宫块/旋转隔板）
+  drawObstacles();
   // 场景实体（炮台/传送门/领域/引力阱/锚/斩线/浮游炮）
   drawStructs();
   // 球

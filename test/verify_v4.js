@@ -80,8 +80,9 @@ async function main() {
   }
 
   // 弹射撞墙单次结算验证（V6）：launchT 标记 + 贴墙高速 → 撞墙结算一次 ≈24 实伤（双触发会 ≥48）
+  // 加固：前序 12s 随机对局可能已分胜负/球阵亡，此时重建满血战斗，避免断言依赖对局时序
   await evalJS(`(function () {
-    if (state !== 'battle' || !battle) startBattle();
+    if (state !== 'battle' || !battle || battle.over || !battle.right || !battle.right.alive) startBattle();
     const f = fieldRect();
     const o = battle.left, r2 = battle.right;
     o.x = f.x + f.s / 2; o.y = f.y + f.s / 2; o.vx = 0; o.vy = 0;
@@ -109,7 +110,7 @@ async function main() {
 
   // 无量合成确定性注入验证（V7）：摆放两枚苍赫球间距 80 → 直接合成并生成芘（抑制双方技能释放防干扰）
   await evalJS(`(function () {
-    if (state !== 'battle' || !battle) startBattle();
+    if (state !== 'battle' || !battle || battle.over || !battle.left || !battle.right || !battle.left.alive || !battle.right.alive) startBattle();
     const f = fieldRect();
     const cx = f.x + f.s / 2, cy = f.y + f.s / 2;
     battle.left.cd = -50; battle.right.cd = -50;
@@ -128,7 +129,7 @@ async function main() {
 
   // 幽灵庇护注入验证（V7）：隐身期 hitOrb(10) → 15 × 0.5 = 7.5
   await evalJS(`(function () {
-    if (state !== 'battle' || !battle) startBattle();
+    if (state !== 'battle' || !battle || battle.over || !battle.left || !battle.left.alive) startBattle();
     const o = battle.left;
     battle.vamp = null;
     o.hp = 200; o.shieldT = 0; o.invT = 0; o.regenT = 0; o.frostT = 0; o.webVulnT = 0;

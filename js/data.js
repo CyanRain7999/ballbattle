@@ -8,6 +8,15 @@ const COLORS = [
   { name: '电光蓝',  main: '#2f6bff', bright: '#9db8ff' },
   { name: '霓虹粉',  main: '#ff4dd2', bright: '#ffb8ec' },
   { name: '白金',    main: '#cfe4ff', bright: '#ffffff' },
+  // —— 扩充色板（与上方 8 色拉开视觉差距）——
+  { name: '翡翠绿',  main: '#00c853', bright: '#a5f3c8' },
+  { name: '绯红',    main: '#e53935', bright: '#ffb3ab' },
+  { name: '鎏金',    main: '#ffb300', bright: '#ffe9a8' },
+  { name: '青柠',    main: '#aeea00', bright: '#eaffb3' },
+  { name: '天青',    main: '#00b0ff', bright: '#a8e4ff' },
+  { name: '墨紫',    main: '#7c4dff', bright: '#d0bfff' },
+  { name: '墨绿',    main: '#00897b', bright: '#a8e6d8' },
+  { name: '银灰',    main: '#90a4ae', bright: '#e0e8ec' },
 ];
 
 // 装饰绘制函数签名: (ctx, orb)
@@ -18,6 +27,13 @@ const DECORS = [
   { id: 'stripe', name: '条纹', desc: '旋转纹路',    draw: drawDecStripe },
   { id: 'hex',    name: '核心', desc: '六边核心',    draw: drawDecHex },
   { id: 'cross',  name: '准星', desc: '战术准星',    draw: drawDecCross },
+  // —— 扩充装饰 ——
+  { id: 'diamond', name: '菱晶', desc: '旋转菱晶框',  draw: drawDecDiamond },
+  { id: 'star',    name: '星辉', desc: '双层五角星',  draw: drawDecStar },
+  { id: 'moon',    name: '月弧', desc: '交叠月牙弧',  draw: drawDecMoon },
+  { id: 'gear',    name: '齿轮', desc: '八齿旋转齿轮', draw: drawDecGear },
+  { id: 'bolt',    name: '闪电', desc: '能量闪电纹',  draw: drawDecBolt },
+  { id: 'halo',    name: '双环', desc: '垂直能量双环', draw: drawDecHalo },
 ];
 
 const ABILITIES = [

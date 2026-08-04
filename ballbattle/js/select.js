@@ -25,6 +25,13 @@ function buildPanel(side, idx) {
     <div class="psec">
       <div class="seclabel">◈ 能力 ABILITY</div>
       <div class="cards" id="ab-${side}"></div>
+    </div>
+    <div class="psec psec-skill2" id="sec-skill2-${side}">
+      <div class="seclabel">◈ 副能力 ABILITY II <span class="sechint">双能力模式</span></div>
+      <select class="skill2-sel" id="skill2-${side}">
+        <option value="none">⚪ 无（单能力）</option>
+        ${ABILITIES.map(a => `<option value="${a.id}">${a.icon} ${a.name}（${a.type === 'melee' ? '近战' : '远程'}）</option>`).join('')}
+      </select>
     </div>`;
   // 颜色
   const sw = $('#sw-' + side);
@@ -68,6 +75,34 @@ function buildPanel(side, idx) {
   });
 }
 
+// ---------------- 玩法规则 --------------
+// 规则按钮状态同步（规则按钮为静态 HTML，事件在 ui.js 绑定一次）
+const OBSTACLE_LABELS = {
+  none: '▣ 障碍 OBSTACLE',
+  cross: '▣ 障碍·十字墙',
+  corners: '▣ 障碍·四角块',
+  blocks: '▣ 障碍·迷宫块',
+  spinner: '▣ 障碍·旋转隔板',
+  grid3: '▣ 障碍·九宫格',
+  ring: '▣ 障碍·八块环',
+  slalom: '▣ 障碍·之字柱',
+  random: '▣ 障碍·随机',
+  randomsym: '▣ 障碍·对称随机',
+};
+function syncRulesUI() {
+  document.querySelectorAll('#rules-switch .rule-btn').forEach(b => {
+    const r = b.dataset.rule;
+    if (r === 'obstacles') {
+      b.textContent = OBSTACLE_LABELS[gameRules.obstacles] || OBSTACLE_LABELS.none;
+      b.classList.toggle('sel', gameRules.obstacles !== 'none');
+    } else b.classList.toggle('sel', !!gameRules[r]);
+  });
+  // 双能力开关联动各面板副能力区
+  document.querySelectorAll('.psec-skill2').forEach(el => {
+    el.style.display = gameRules.multiSkill ? '' : 'none';
+  });
+}
+
 // 按当前模式重建选择面板（2P: 左右 + VS 列；3P/4P: 网格 + 底部按钮）
 function buildPanels() {
   const body = $('#select-body');
@@ -75,7 +110,7 @@ function buildPanels() {
   const keys = panelKeys(gameMode);
   const multi = gameMode > 2;
   body.className = 'select-body' + (multi ? ' multi' : '');
-  if (multi) body.dataset.n = String(gameMode);
+  if (multi) body.dataset.n = String(gameMode === 5 || gameMode === 6 ? 4 : gameMode); // 2v2/BOSS 用 4 面板 2 列网格
   keys.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'panel' + (k === 'left' ? ' panel-left' : k === 'right' ? ' panel-right' : '');
@@ -90,14 +125,25 @@ function buildPanels() {
       <div class="vs">VS</div>
       <div class="vs-line"></div>
       <button class="btn vs-btn" id="btn-random">⚄ 随机配置</button>
+      <button class="btn vs-btn" id="btn-balance">⚙ 数值</button>
       <button class="btn primary vs-btn" id="btn-start">▶ 启动战斗</button>`;
     body.insertBefore(vs, body.children[1]);
     $('#btn-random').onclick = randomizeAll;
     $('#btn-start').onclick = startGame;
+    $('#btn-balance').onclick = () => location.href = 'editor.html'; // 数值编辑器（buildPanels 重建后重新绑定）
   }
   $('#multi-actions').style.display = multi ? 'flex' : 'none';
+  // 队伍模式提示（2v2 / BOSS）
+  const hint = $('#multi-hint');
+  if (hint) {
+    if (gameMode === 5) hint.textContent = '◈ P1 + P3 蓝队 VS P2 + P4 红队 · 同队不互伤，按队伍总血量判胜';
+    else if (gameMode === 6) hint.textContent = '◈ 四位玩家联手 VS BOSS（玩家同队不互伤）· BOSS 拥有强化能力与巨额生命';
+    else hint.textContent = '';
+    hint.style.display = multi && gameMode >= 5 ? 'block' : 'none';
+  }
   document.querySelectorAll('#mode-switch .mode-btn').forEach(b => b.classList.toggle('sel', +b.dataset.mode === gameMode));
   keys.forEach(k => renderPreview(k));
+  syncRulesUI();
 }
 
 // ---------------- 选择屏星尘粒子背景 ----------------
@@ -159,6 +205,7 @@ function readConfig(side) {
     color: COLORS[Math.max(0, cIdx)],
     decor: DECORS[Math.max(0, dIdx)].id,
     ability: ABILITIES[Math.max(0, aIdx)].id,
+    skill2: gameRules.multiSkill ? ($('#skill2-' + side) ? $('#skill2-' + side).value : 'none') : null,
   };
 }
 
@@ -191,6 +238,14 @@ function randomizeAll() {
     [...p.querySelectorAll('.swatch')].forEach((x, i2) => x.classList.toggle('sel', COLORS[i2].name === c.name));
     [...p.querySelectorAll('#dc-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', DECORS[i2].id === d.id));
     [...p.querySelectorAll('#ab-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', ABILITIES[i2].id === a.id));
+    // 双能力：30% 概率无副能力，否则随机一个与主能力不同的
+    const s2sel = $('#skill2-' + side);
+    if (s2sel) {
+      if (gameRules.multiSkill && Math.random() > .3) {
+        const s2 = pick(ABILITIES.filter(x => x.id !== a.id));
+        s2sel.value = s2.id;
+      } else s2sel.value = 'none';
+    }
     renderPreview(side);
   });
   sfx('ui');

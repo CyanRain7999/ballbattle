@@ -46,12 +46,13 @@ function updateStructs(dt) {
         if (d < o.r + 24) {
           o.x = s.pair.x; o.y = s.pair.y;
           o.portalCd = 0.6;
-          if (o.side === s.owner) { // 我方进入：+10 血，跃迁后 2s 无敌
-            o.hp = Math.min(o.maxHp, o.hp + 10);
+          const portalOwner = ownerOf(s.owner);
+          if (portalOwner && !isFoe(o, portalOwner)) { // 我方/队友进入：+10 血，跃迁后 2s 无敌（队伍模式队友同享增益）
+            o.hp = Math.min(o.maxHp, o.hp + 10 * BALANCE.global.healMult * o.stats.healMult);
             o.invT = 2;
             addText(o.x, o.y - 40, '+10 跃迁无敌', '#3dff9e', 13);
-          } else if (o.invT <= 0) { // 敌方进入：-20 血（无敌期不受传送门伤害）
-            o.hp -= 20;
+          } else if (o.invT <= 0) { // 敌方进入：-20 血（无敌期不受传送门伤害）；按传送门所有者技能倍率
+            o.hp -= 20 * srcDmgMult(portalOwner); // 敌方进入 -20（无敌期不受传送门伤害）
             addText(o.x, o.y - 40, '-20', '#ff5566', 16);
           }
           addRing(s.x, s.y, 40, '#8df6ff', 2);
@@ -67,22 +68,22 @@ function updateStructs(dt) {
       const owner = ownerOf(s.owner);
       const foe = nearestFoe(ownerOf(s.owner));
       const inR = (o) => o.alive && Math.hypot(o.x - s.x, o.y - s.y) < s.r;
-      if (s.kind === 'heal' && inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 2.6 * dt); // 新：2→2.6（+30%）
+      if (s.kind === 'heal' && inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 2.6 * dt * BALANCE.global.healMult * owner.stats.healMult); // 新：2→2.6（+30%）
       if (s.kind === 'slow' && inR(foe)) { foe.slowT = Math.max(foe.slowT, .3); foe.slowPct = .52; } // 新：40%→52%（+30%）
       if (s.kind === 'vamp') {
-        if (inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 3 * dt);
+        if (inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 3 * dt * BALANCE.global.healMult * owner.stats.healMult);
         if (inR(foe)) { foe.slowT = Math.max(foe.slowT, .3); foe.slowPct = .3; }
       }
       if (s.kind === 'idol') { // 偶像领域：此消彼长（恢复已减半）
-        if (inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 4 * dt); // 新：8→4 减半
+        if (inR(owner)) owner.hp = Math.min(owner.maxHp, owner.hp + 4 * dt * BALANCE.global.healMult * owner.stats.healMult); // 新：8→4 减半
         if (inR(foe) && foe.invT <= 0) {
-          const dmg = (6 + (1 - foe.hp / foe.maxHp) * 6) * dt;
+          const dmg = (6 + (1 - foe.hp / foe.maxHp) * 6) * dt * srcDmgMult(owner); // 按领域所有者倍率
           foe.hp -= dmg;
           if (Math.random() < .4) addFx({ type: 'spark', x: foe.x + rand(-20, 20), y: foe.y + rand(-20, 20), vx: rand(-30, 30), vy: rand(-70, -20), life: 0, maxLife: .5, size: 2, color: '#ffd0ff' });
         }
       }
-      if (s.kind === 'idolburst' && inR(foe) && foe.invT <= 0) { // 领域爆发（持续伤害）
-        const dmg = 6 * dt;
+      if (s.kind === 'idolburst' && inR(foe) && foe.invT <= 0) { // 领域爆发（持续伤害，按所有者倍率）
+        const dmg = 6 * dt * srcDmgMult(owner);
         foe.hp -= dmg;
         if (Math.random() < .5) addFx({ type: 'spark', x: foe.x + rand(-20, 20), y: foe.y + rand(-20, 20), vx: rand(-30, 30), vy: rand(-70, -20), life: 0, maxLife: .5, size: 2, color: '#ffd0ff' });
       }
@@ -90,12 +91,12 @@ function updateStructs(dt) {
         hitOrb(foe, s.dmg, owner, true);
         s.dmg = 0;
       }
-      if (s.kind === 'pois' && inR(foe) && foe.invT <= 0) { // 持续毒区（+30%）
-        foe.hp -= 13 * dt; // 新：10→13（+30%）
+      if (s.kind === 'pois' && inR(foe) && foe.invT <= 0) { // 持续毒区（+30%，按所有者倍率）
+        foe.hp -= 13 * dt * srcDmgMult(owner); // 新：10→13（+30%）
         if (Math.random() < .4) addFx({ type: 'spark', x: foe.x + rand(-16, 16), y: foe.y + rand(-16, 16), vx: rand(-20, 20), vy: rand(-40, -10), life: 0, maxLife: .4, size: 2, color: '#ff8899' });
       }
-      if (s.kind === 'trap' && inR(foe) && foe.invT <= 0) { // 回声陷阱：伤害 + 减速
-        foe.hp -= 14 * dt;
+      if (s.kind === 'trap' && inR(foe) && foe.invT <= 0) { // 回声陷阱：伤害 + 减速（按所有者倍率）
+        foe.hp -= 14 * dt * srcDmgMult(owner);
         foe.slowT = Math.max(foe.slowT, .3); foe.slowPct = .45;
         if (Math.random() < .5) addFx({ type: 'spark', x: foe.x + rand(-24, 24), y: foe.y + rand(-24, 24), vx: rand(-30, 30), vy: rand(-50, -10), life: 0, maxLife: .5, size: 2.4, color: '#b06aff' });
       }
@@ -208,7 +209,7 @@ function updateStructs(dt) {
             o.x = s.x + nx * (s.R + o.r + 2); o.y = s.y + ny * (s.R + o.r + 2);
             addSparks(o.x, o.y, 6, '#9fd8ff');
             const owner2 = ownerOf(s.owner);
-            if (o !== owner2) { // 只有敌人撞墙才反伤
+            if (o !== owner2 && (!owner2 || isFoe(o, owner2))) { // 只有敌人撞墙才反伤（队伍模式队友不反伤）
               s.hitT = (s.hitT || 0) - dt;
               if (s.hitT <= 0) {
                 s.hitT = .5;
@@ -259,10 +260,10 @@ function updateStructs(dt) {
         addFx({ type: 'spark', x: s.x1 + (s.x2 - s.x1) * k + rand(-6, 6), y: s.y1 + (s.y2 - s.y1) * k + rand(-6, 6), vx: rand(-15, 15), vy: rand(-15, 15), life: 0, maxLife: .3, size: 3, color: '#9ff' });
       }
     }
-    if (s.type === 'cable') { // 切割电缆：接触持续伤害
+    if (s.type === 'cable') { // 切割电缆：接触持续伤害（按所有者技能倍率）
       const foe = nearestFoe(ownerOf(s.owner));
       if (foe.alive && foe.invT <= 0 && distToSeg(foe.x, foe.y, s.x1, s.y1, s.x2, s.y2) < foe.r + 10) {
-        foe.hp -= 15 * dt;
+        foe.hp -= 15 * dt * srcDmgMult(ownerOf(s.owner)); // 切割电缆：接触持续伤害
         if (Math.random() < .6) addFx({ type: 'spark', x: foe.x + rand(-16, 16), y: foe.y + rand(-16, 16), vx: rand(-20, 20), vy: rand(-40, -10), life: 0, maxLife: .4, size: 2, color: '#b0c4ff' });
       }
     }
@@ -351,11 +352,13 @@ function updateStructs(dt) {
         }
         // 爆炸伤害：对方在范围内必受伤；跨方合成时自己也会被波及（伤害已增强）
         if (foe.alive && Math.hypot(foe.x - bx, foe.y - by) < 430) hitOrb(foe, 42, owner, true); // 新：35→42
-        if (mate.owner !== s.owner && owner.alive && Math.hypot(owner.x - bx, owner.y - by) < 430) hitOrb(owner, 42, foe, true);
+        const mateOwner = ownerOf(mate.owner);
+        const crossFuse = !mateOwner || isFoe(mateOwner, owner); // 跨队合成才炸自己（传统模式恒跨方；队伍模式队友合成不互炸）
+        if (crossFuse && owner.alive && Math.hypot(owner.x - bx, owner.y - by) < 430) hitOrb(owner, 42, foe, true);
         s.dead = true; mate.dead = true;
         if (!battle.over) { // 爆炸已致胜（对手死亡）则不再生成芘球
           // 合成"芘"：双色融合太极球，5s 内强力吸扯对方；跨方合成时归属距爆炸点更近的一方（3/4 球比较全部存活球），同方合成归释放方
-          const ownSide = mate.owner !== s.owner
+          const ownSide = crossFuse
             ? (B.orbs.reduce((best, o2) => (!o2.alive) ? best : (!best || Math.hypot(o2.x - bx, o2.y - by) < Math.hypot(best.x - bx, best.y - by)) ? o2 : best, null)).side
             : s.owner;
           B.structs.push({ type: 'wulianbi', owner: ownSide, x: bx, y: by, vx: rand(-90, 90), vy: rand(-90, 90), life: 5, r: 30, hitT: 0 });
@@ -469,7 +472,7 @@ function updateStructs(dt) {
         s.hitT -= dt;
         if (s.hitT <= 0) {
           s.hitT = .5;
-          foe.hp -= 2.5; // 直接毒伤（与 burn DoT 同款）
+          foe.hp -= 2.5 * srcDmgMult(ownerOf(s.owner)); // 毒蘑菇直接毒伤
           foe.slowT = Math.max(foe.slowT, .3); foe.slowPct = .3;
           addText(foe.x, foe.y - 40, '毒菇', '#b8e870', 12);
           addSparks(foe.x, foe.y, 3, '#b8e870');
@@ -482,7 +485,7 @@ function updateStructs(dt) {
       s.r += 46 * dt;
       const owner = ownerOf(s.owner);
       for (const o of B.orbs) {
-        if (o === owner || !o.alive || o.invT > 0) continue;
+        if (o === owner || !o.alive || o.invT > 0 || (owner && !isFoe(o, owner))) continue; // 不烧队友
         if (Math.hypot(o.x - s.x, o.y - s.y) < o.r + s.r) {
           s.hitT -= dt;
           if (s.hitT <= 0) {
@@ -520,7 +523,7 @@ function updateStructs(dt) {
         battle.shake = Math.min(14, battle.shake + 6);
         sfx('pylon');
         for (const o of B.orbs) {
-          if (o === owner || !o.alive || o.invT > 0) continue;
+          if (o === owner || !o.alive || o.invT > 0 || (owner && !isFoe(o, owner))) continue; // 不劈队友
           if (Math.hypot(o.x - s.x, o.y - s.y) < o.r + s.r) {
             hitOrb(o, 14, owner, true);
             o.stunT = Math.max(o.stunT, 1.1); // 定身
@@ -532,11 +535,11 @@ function updateStructs(dt) {
         s.dead = true;
       }
     }
-    if (s.type === 'coffinzone') { // 棺椁封锁区：禁止敌人进入（接触反弹 + 小伤）
-      s.life -= dt;
+    if (s.type === 'coffinzone') { // 棺椁封锁区（永久存在，棺椁死亡后清除）：禁止敌人进入（接触反弹 + 小伤；队友不受影响）
       const owner = ownerOf(s.owner);
+      if (!owner || !owner.alive) { s.dead = true; continue; } // 人死灯灭：出局后封锁区消散
       for (const o of B.orbs) {
-        if (o.side === s.owner || !o.alive || o.invT > 0) continue;
+        if ((owner && !isFoe(o, owner)) || !o.alive || o.invT > 0) continue; // 施放者本人与队友豁免
         if (o.x > s.x && o.x < s.x + s.w && o.y > s.y && o.y < s.y + s.h) {
           const dx = o.x - (s.x + s.w / 2), dy = o.y - (s.y + s.h / 2);
           const d = Math.hypot(dx, dy) || 1;
@@ -550,12 +553,12 @@ function updateStructs(dt) {
         }
       }
     }
-    if (s.type === 'laserring') { // 科技X：6 圈激光保护，越靠内伤害越高
+    if (s.type === 'laserring') { // 科技X：6 圈激光保护，越靠内伤害越高（不伤队友）
       const owner = ownerOf(s.owner);
       if (!owner || !owner.alive) { s.dead = true; continue; }
       s.x = owner.x; s.y = owner.y;
       for (const o of B.orbs) {
-        if (o === owner || !o.alive || o.invT > 0) continue;
+        if (o === owner || !o.alive || o.invT > 0 || !isFoe(o, owner)) continue;
         const d = Math.hypot(o.x - s.x, o.y - s.y);
         if (d < o.r + 78) { // 贴身内圈
           s.hitT[6] -= dt;
@@ -584,7 +587,7 @@ function updateStructs(dt) {
         const a = s.rot + i * TAU / 6;
         const ex = s.x + Math.cos(a) * 620, ey = s.y + Math.sin(a) * 620;
         for (const o of B.orbs) {
-          if (o === owner || !o.alive || o.invT > 0) continue;
+          if (o === owner || !o.alive || o.invT > 0 || !isFoe(o, owner)) continue; // 不扫射队友
           if (distToSeg(o.x, o.y, s.x, s.y, ex, ey) < o.r + 16) {
             s.hitT[i] -= dt;
             if (s.hitT[i] <= 0) {
