@@ -85,12 +85,21 @@ function transTeamColor(side) {
   return null;
 }
 
-// 特写舞台绘制（老虎机动画 + 斜角排布 + 弧线连接 + 扫描光 + 模式标签/VS/锁定光效）
+// 特写舞台绘制（老虎机动画 + 斜角排布 + 弧线连接 + 扫描光 + 模式标签/VS/锁定光效 + 随进度依次点亮/高光脉冲）
 const MODE_LABELS = { 2: '双球对决', 3: '三方混战', 4: '四方混战', 5: '2V2 团战', 6: '4V1 BOSS' };
-function drawTransitionStage(t) {
+function drawTransitionStage(t, dur) {
   const W = transW, H = transH;
   tctx.clearRect(0, 0, W, H);
   const orbs = transOrbs || [], layout = transLayoutCache || [];
+  const p = Math.min(1, t / (dur / 1000 || 1)); // 加载进度 0~1（决定点亮顺序）
+  // 从暗到亮：球 i 在进度 (i+1.1)/(2.2n) 处点亮（4P 约每 1.1s 亮一个，5s 内全部亮起）；
+  // 点亮瞬间产生 0.45s 高光脉冲（白泛光 + 十字光斑 + 扩散环），随后回落到正常颜色
+  const liArr = [], hgArr = [];
+  for (let i = 0; i < orbs.length; i++) {
+    liArr.push(Math.max(0, Math.min(1, (p * 2.2 * orbs.length - i) / 1.1)));
+    const ti = Math.max(i / (2.2 * orbs.length) * (dur / 1000), .45); // 点亮时刻（秒，至少 0.45s 让首球也有升起过程）
+    hgArr.push(Math.max(0, 1 - Math.abs(t - ti) / .45)); // 对称高光脉冲：点亮瞬间达峰，前后各 0.45s 升起/衰减
+  }
   // 背景浮尘
   for (let i = 0; i < 30; i++) {
     const px = ((i * 173.31 + t * 24) % (W + 40)) - 20;
@@ -133,26 +142,27 @@ function drawTransitionStage(t) {
     const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
     const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
     const g = tctx.createRadialGradient(x, y, L.r * .2, x, y, L.r * 2.5);
-    g.addColorStop(0, hexA(cur.color.main, L.boss ? .2 : .32)); // BOSS 光晕压低避免吞掉玩家球
+    g.addColorStop(0, hexA(cur.color.main, (L.boss ? .2 : .32) * liArr[i])); // BOSS 光晕压低避免吞掉玩家球；亮度随点亮进度
     g.addColorStop(1, 'rgba(0,0,0,0)');
     tctx.fillStyle = g;
     tctx.beginPath(); tctx.arc(x, y, L.r * 2.5, 0, TAU); tctx.fill();
     if (L.team) {
       const tc = transTeamColor(L.team);
       tctx.save();
-      tctx.strokeStyle = hexA(tc, .5); tctx.lineWidth = 3; tctx.setLineDash([26, 18]); tctx.lineDashOffset = -t * 46;
+      tctx.strokeStyle = hexA(tc, .5 * liArr[i]); tctx.lineWidth = 3; tctx.setLineDash([26, 18]); tctx.lineDashOffset = -t * 46;
       tctx.beginPath(); tctx.arc(x, y, L.r + 12, 0, TAU); tctx.stroke();
       tctx.restore();
     }
-    // 展示框：旋转八角形（轮转期虚线闪烁，定格后实线辉光；顶点带亮点，不横平竖直）
+    // 展示框：旋转八角形（轮转期虚线闪烁，定格后实线辉光；顶点带亮点，不横平竖直；亮度随点亮进度）
     const stopped = !slot || slot.stopped;
     const fr = L.r * 1.35;
+    const li = liArr[i];
     tctx.save();
     tctx.translate(x, y); tctx.rotate(t * .4 + i * 1.1);
-    tctx.strokeStyle = hexA(cur.color.main, stopped ? .8 : .38);
+    tctx.strokeStyle = hexA(cur.color.main, (stopped ? .8 : .38) * (.25 + .75 * li));
     tctx.lineWidth = stopped ? 2.5 : 1.5;
     if (!stopped) tctx.setLineDash([12, 9]);
-    tctx.shadowColor = cur.color.main; tctx.shadowBlur = stopped ? 14 : 0;
+    tctx.shadowColor = cur.color.main; tctx.shadowBlur = stopped ? 14 * li : 0;
     tctx.beginPath();
     for (let k = 0; k < 8; k++) {
       const a = k / 8 * TAU - Math.PI / 2;
@@ -163,7 +173,7 @@ function drawTransitionStage(t) {
     tctx.setLineDash([]); tctx.shadowBlur = 0;
     for (let k = 0; k < 8; k++) {
       const a = k / 8 * TAU - Math.PI / 2;
-      tctx.fillStyle = hexA(cur.color.bright, stopped ? .85 : .3);
+      tctx.fillStyle = hexA(cur.color.bright, (stopped ? .85 : .3) * (.25 + .75 * li));
       tctx.beginPath(); tctx.arc(Math.cos(a) * fr, Math.sin(a) * fr, stopped ? 3.2 : 2, 0, TAU); tctx.fill();
     }
     tctx.restore();
@@ -176,12 +186,13 @@ function drawTransitionStage(t) {
     const wob = L.r * .05;
     const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
     const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
-    // 老虎机未停：残影拖尾
+    const li = liArr[i], hg = hgArr[i];
+    // 老虎机未停：残影拖尾（亮度随点亮进度）
     if (slot && !slot.stopped) {
       for (let k = 1; k <= 2; k++) {
         const ox = x + Math.cos(t * 15 + i * 3) * k * 9;
         const oy = y + Math.sin(t * 13 + i * 4) * k * 9;
-        tctx.globalAlpha = .15 / k;
+        tctx.globalAlpha = .15 / k * li;
         drawOrb(tctx, { x: ox, y: oy, r: L.r * .96, angle: t * 2 + i, color: cur.color, decor: cur.decor, history: null, shieldT: 0, rushT: 0, flash: 0 }, t);
       }
       tctx.globalAlpha = 1;
@@ -189,6 +200,35 @@ function drawTransitionStage(t) {
     // 主体球
     const orb = { x, y, r: L.r, angle: t * .9 + L.a + i, color: cur.color, decor: cur.decor, history: null, shieldT: 0, rushT: 0, flash: 0 };
     drawOrb(tctx, orb, t);
+    // 暗罩：未点亮时球体压暗（从暗到亮）
+    if (li < 1) {
+      tctx.save();
+      tctx.globalAlpha = (1 - li) * .62;
+      tctx.fillStyle = '#05070d';
+      tctx.beginPath(); tctx.arc(x, y, L.r, 0, TAU); tctx.fill();
+      tctx.restore();
+    }
+    // 高光脉冲：点亮瞬间白光大泛光 + 十字光斑 + 扩散环，0.45s 衰减回正常（光污染）
+    if (hg > 0) {
+      tctx.save();
+      const wg = tctx.createRadialGradient(x, y, 0, x, y, L.r * 3);
+      wg.addColorStop(0, `rgba(255,255,255,${.8 * hg})`);
+      wg.addColorStop(.35, `rgba(255,255,255,${.3 * hg})`);
+      wg.addColorStop(1, 'rgba(255,255,255,0)');
+      tctx.fillStyle = wg;
+      tctx.beginPath(); tctx.arc(x, y, L.r * 3, 0, TAU); tctx.fill();
+      tctx.strokeStyle = `rgba(255,255,255,${.6 * hg})`;
+      tctx.lineWidth = 2.5;
+      tctx.beginPath();
+      tctx.moveTo(x - L.r * 2.6, y); tctx.lineTo(x + L.r * 2.6, y);
+      tctx.moveTo(x, y - L.r * 2.6); tctx.lineTo(x, y + L.r * 2.6);
+      tctx.stroke();
+      const er = L.r * (1.3 + (1 - hg) * .9); // 扩散环（从内向外撑开）
+      tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = .55 * hg;
+      tctx.lineWidth = 2.5;
+      tctx.beginPath(); tctx.arc(x, y, er, 0, TAU); tctx.stroke();
+      tctx.restore();
+    }
     // 老虎机定格光效：停止后 0.5s 内扩散光环 + LOCKED
     if (slot && slot.stoppedAt) {
       const d = t * 1000 - slot.stoppedAt;
@@ -253,6 +293,12 @@ function drawTransitionStage(t) {
     tctx.fillStyle = '#cfeaff'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 30;
     tctx.fillText('VS', 0, 0);
     tctx.restore();
+  }
+  // 全屏泛光：点亮瞬间的全局光污染（微弱白光叠加）
+  const hgMax = hgArr.reduce((a, b) => Math.max(a, b), 0);
+  if (hgMax > .01) {
+    tctx.fillStyle = `rgba(190,225,255,${hgMax * .06})`;
+    tctx.fillRect(0, 0, W, H);
   }
   // 扫描光带
   tctx.save();
@@ -322,7 +368,7 @@ function startTransition() {
         else if (Math.random() < .55) s.cur = randomTransOrb(s.final || s.cur);
       }
     }
-    drawTransitionStage(el / 1000);
+    drawTransitionStage(el / 1000, dur);
     if (p < 1) requestAnimationFrame(step);
     else { sfx('win'); setTimeout(() => { if (seq === transitionSeq) startBattle(); }, 220); }
   })(t0);
@@ -472,6 +518,9 @@ document.querySelectorAll('#rules-switch .rule-btn').forEach(b => {
     } else if (r === 'firepower') {
       gameRules.firepower = !gameRules.firepower;
       if (gameRules.firepower) gameRules.multiSkill = false; // 互斥
+    } else if (r === 'fieldScale') { // 场地尺寸：100% → 90% → 80% → 70% 循环（以中心收缩）
+      const scales = [1, .9, .8, .7];
+      gameRules.fieldScale = scales[(scales.indexOf(gameRules.fieldScale || 1) + 1) % scales.length];
     } else {
       gameRules[r] = !gameRules[r];
     }

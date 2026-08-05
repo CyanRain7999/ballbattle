@@ -105,6 +105,9 @@ function syncRulesUI() {
     if (r === 'obstacles') {
       b.textContent = OBSTACLE_LABELS[gameRules.obstacles] || OBSTACLE_LABELS.none;
       b.classList.toggle('sel', gameRules.obstacles !== 'none');
+    } else if (r === 'fieldScale') { // 场地尺寸档位：label 显示百分比，非 100% 档高亮
+      b.textContent = '▢ 场地 ' + Math.round((gameRules.fieldScale || 1) * 100) + '%';
+      b.classList.toggle('sel', (gameRules.fieldScale || 1) !== 1);
     } else b.classList.toggle('sel', !!gameRules[r]);
   });
   // 双能力开关联动各面板副能力区

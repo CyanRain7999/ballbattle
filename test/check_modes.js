@@ -67,7 +67,7 @@ const check = (name, ok, detail) => {
   check('选择屏渲染新色板', await evalJS(`document.querySelectorAll('#panel-left .swatch').length === 16`), await evalJS(`document.querySelectorAll('#panel-left .swatch').length`));
 
   console.log('== 2. 规则按钮 UI ==');
-  check('规则按钮存在', await evalJS(`document.querySelectorAll('#rules-switch .rule-btn').length === 4`));
+  check('规则按钮存在', await evalJS(`document.querySelectorAll('#rules-switch .rule-btn').length === 5`));
   await evalJS(`document.querySelector('[data-rule=shrink]').click()`);
   check('缩圈开关', await evalJS(`gameRules.shrink === true`));
   await evalJS(`document.querySelector('[data-rule=obstacles]').click()`);
@@ -76,6 +76,40 @@ const check = (name, ok, detail) => {
   await evalJS(`document.querySelector('[data-rule=multiSkill]').click()`);
   check('双能力开关', await evalJS(`gameRules.multiSkill === true`));
   check('双能力区显示', await evalJS(`document.getElementById('sec-skill2-left').style.display !== 'none'`));
+
+  console.log('== 2c. 场地尺寸档位（100% / 90% / 80% / 70%） ==');
+  const sFull = await evalJS(`(() => { gameRules.fieldScale = 1; return fieldRect().s; })()`);
+  check('场地按钮存在', await evalJS(`!!document.querySelector('[data-rule=fieldScale]')`));
+  check('点击切换 100%→90%', await evalJS(`(() => {
+    document.querySelector('[data-rule=fieldScale]').click();
+    return gameRules.fieldScale === .9 && document.querySelector('[data-rule=fieldScale]').textContent.includes('90%');
+  })()`));
+  check('90%→80%→70%→100% 循环', await evalJS(`(() => {
+    const b = document.querySelector('[data-rule=fieldScale]');
+    b.click(); b.click(); b.click();
+    return gameRules.fieldScale === 1 && b.textContent.includes('100%');
+  })()`));
+  check('场地实际缩小（90% 档）', await evalJS(`(() => {
+    gameRules.fieldScale = .9;
+    return Math.abs(fieldRect().s / ${sFull} - .9) < .005;
+  })()`));
+  check('场地实际缩小（70% 档）', await evalJS(`(() => {
+    gameRules.fieldScale = .7;
+    return Math.abs(fieldRect().s / ${sFull} - .7) < .005;
+  })()`));
+  check('70% 场地开战正常', await evalJS(`(() => {
+    gameRules.fieldScale = .7;
+    battle = null; players = {};
+    panelKeys(gameMode).forEach(k => players[k] = readConfig(k));
+    startBattle();
+    return !!battle && Math.abs(battle.field.s / ${sFull} - .7) < .005 && battle.orbs.every(o => o.x > battle.field.x - o.r && o.x < battle.field.x + battle.field.s + o.r && o.y > battle.field.y - o.r && o.y < battle.field.y + battle.field.s + o.r);
+  })()`));
+  check('70% 场地 + 缩圈共存', await evalJS(`(() => {
+    gameRules.shrink = true;
+    updateShrink(battle, 21);
+    return battle.field.s < battle.fieldFull.s;
+  })()`));
+  await evalJS(`gameRules.shrink = true; gameRules.fieldScale = 1;`); // 恢复第 2 段的缩圈开启状态
 
   console.log('== 2b. 双能力自动分配 + 火力全开（三能力） ==');
   check('双能力开启后副槽自动分配', await evalJS(`document.getElementById('skill2-left').value !== 'none'`), await evalJS(`document.getElementById('skill2-left').value`));

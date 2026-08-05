@@ -20,7 +20,7 @@ let state = 'select';
 let players = {};   // { left: cfg, right: cfg }（多球模式为 { p0, p1, p2, p3 }）
 let gameMode = 2;   // 2 / 3 / 4 球模式
 // 玩法规则（与人数正交，选择屏勾选）：shrink 缩圈 / obstacles 障碍布局('none'|'cross'|'corners'|'blocks'|'spinner'|'grid3'|'ring'|'slalom'|'random'|'randomsym') / multiSkill 双能力 / firepower 火力全开（三能力）
-let gameRules = { shrink: false, obstacles: 'none', multiSkill: false, firepower: false };
+let gameRules = { shrink: false, obstacles: 'none', multiSkill: false, firepower: false, fieldScale: 1 }; // fieldScale: 场地尺寸档位（1 / .9 / .8 / .7）
 let battle = null;  // 战斗实例
 
 // ---------------- 屏幕管理 ----------------
@@ -65,7 +65,9 @@ function fieldRect() {
   // 缩圈模式：战斗实例维护动态场地矩形（初始=全屏，逐级内缩），全部反弹/投射物/绘制自动跟随
   if (battle && battle.field) return battle.field;
   const w = innerWidth, h = innerHeight;
-  const s = Math.min(w * .94, h * .84, 720);
+  const base = Math.min(w * .94, h * .84, 720);
+  const sc = (gameRules && gameRules.fieldScale) || 1; // 场地尺寸档位：以中心收缩
+  const s = base * sc;
   return { x: (w - s) / 2, y: (h - s) / 2 + 6, s };
 }
 function resizeCanvas() {
