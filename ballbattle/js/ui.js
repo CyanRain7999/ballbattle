@@ -1,6 +1,6 @@
 // ---------------- 转场 ----------------
 let transitionSeq = 0; // 转场令牌：连点"再战"时旧定时器失效
-let transRandom = false; // 随机抽取模式：转场进入老虎机动画（select.js 随机配置时置位，手动配置时清零）
+let transRandom = false; // 随机启动模式：转场 10s（轮转停止时才随机化）；手动启动/再战时清零走短转场
 const transCanvas = $('#trans-stage');
 const tctx = transCanvas.getContext('2d');
 let transOrbs = []; // 特写球列表（从 players 构造）
@@ -38,7 +38,7 @@ function randomTransOrb(proto) {
   const extra = Math.random() < .4 ? ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id : null;
   const extra3 = extra && Math.random() < .4 ? ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id : null;
   return {
-    name: proto.name,
+    name: (proto && proto.name) || 'PLAYER', // 轮转阶段 final 尚未决定，名字从当前滚动对象取
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     decor: DECORS[Math.floor(Math.random() * DECORS.length)].id,
     ability: a.id, skill2: extra, skill3: extra3,
@@ -124,10 +124,11 @@ function drawTransitionStage(t) {
   tctx.fillStyle = 'rgba(0,229,255,.85)'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 14;
   tctx.fillText('◆ ' + (MODE_LABELS[gameMode] || gameMode + 'P') + ' ◆', 0, 0);
   tctx.restore();
-  // 第一遍：光晕与队伍底环（全部画完再画球，避免后画的大光晕盖住前面的球）
+  // 第一遍：光晕、队伍底环、展示框（全部画完再画球，避免后画的大光晕盖住前面的球）
   orbs.forEach((o, i) => {
     const L = layout[i];
-    const cur = transSlot ? transSlot[i].cur : o;
+    const slot = transSlot ? transSlot[i] : null;
+    const cur = slot ? slot.cur : o;
     const wob = L.r * .05;
     const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
     const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
@@ -143,6 +144,29 @@ function drawTransitionStage(t) {
       tctx.beginPath(); tctx.arc(x, y, L.r + 12, 0, TAU); tctx.stroke();
       tctx.restore();
     }
+    // 展示框：旋转八角形（轮转期虚线闪烁，定格后实线辉光；顶点带亮点，不横平竖直）
+    const stopped = !slot || slot.stopped;
+    const fr = L.r * 1.35;
+    tctx.save();
+    tctx.translate(x, y); tctx.rotate(t * .4 + i * 1.1);
+    tctx.strokeStyle = hexA(cur.color.main, stopped ? .8 : .38);
+    tctx.lineWidth = stopped ? 2.5 : 1.5;
+    if (!stopped) tctx.setLineDash([12, 9]);
+    tctx.shadowColor = cur.color.main; tctx.shadowBlur = stopped ? 14 : 0;
+    tctx.beginPath();
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * TAU - Math.PI / 2;
+      const px = Math.cos(a) * fr, py = Math.sin(a) * fr;
+      k ? tctx.lineTo(px, py) : tctx.moveTo(px, py);
+    }
+    tctx.closePath(); tctx.stroke();
+    tctx.setLineDash([]); tctx.shadowBlur = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * TAU - Math.PI / 2;
+      tctx.fillStyle = hexA(cur.color.bright, stopped ? .85 : .3);
+      tctx.beginPath(); tctx.arc(Math.cos(a) * fr, Math.sin(a) * fr, stopped ? 3.2 : 2, 0, TAU); tctx.fill();
+    }
+    tctx.restore();
   });
   // 第二遍：球体 + 名字 + 能力名 + 锁定光效（保证球体不被光晕遮挡）
   orbs.forEach((o, i) => {
@@ -241,26 +265,41 @@ function drawTransitionStage(t) {
   tctx.restore();
 }
 
+// 随机启动：不预先随机，进入加载界面后由转场轮转在停止时刻才决定结果
+function startRandomTransition() {
+  transRandom = true;
+  startTransition();
+}
+
 function startTransition() {
   const seq = ++transitionSeq;
   const isRandom = transRandom;
   showScreen('transition');
   const log = $('#trans-log'), fill = $('#trans-fill'), pct = $('#trans-pct');
   log.textContent = ''; fill.style.width = '0%'; pct.textContent = '0%';
-  const lines = [
+  // 随机模式：10s 长转场（前 5s 老虎机轮转 + 后 5s 定格展示）；手动模式 1.7s
+  const dur = isRandom ? 10000 : 1700;
+  const lines = isRandom ? [
+    '[ ⚄ ] 随机抽取战斗配置 SHUFFLING .......',
+    '[ OK ] 初始化轨道核心 ORB-CORE v2.4 ......',
+    '[ OK ] 校准战斗场域 FIELD-CALIB ..........',
+    '[ OK ] 加载能力模块 WEAPON-MOD ...........',
+    '[ OK ] 同步光学传感器 SENSOR-SYNC ........',
+    '>>> 战斗协议启动，祝好运',
+  ] : [
     '[ OK ] 初始化轨道核心 ORB-CORE v2.4 ......',
     '[ OK ] 校准战斗场域 FIELD-CALIB ..........',
     '[ OK ] 加载能力模块 WEAPON-MOD ...........',
     '[ OK ] 同步光学传感器 SENSOR-SYNC ........',
     '>>> 战斗协议启动，祝好运',
   ];
-  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * 380));
-  // 特写初始化（老虎机：随机模式逐球错峰停止，高速刷新球外观）
+  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * (isRandom ? 1900 : 380)));
+  // 特写初始化（随机模式：前 5s 高速轮转，逐球在 3.6~4.9s 错峰定格；结果在轮转停止时刻才随机生成）
   resizeTrans(); // 先定画布尺寸（transW/transH），布局计算依赖它
   transOrbs = transitionOrbs();
   transLayoutCache = transLayout(gameMode, transOrbs.length);
-  transSlot = isRandom ? transOrbs.map((o, i) => ({ final: o, cur: randomTransOrb(o), stopAt: 420 + i * 400, stopped: false, stoppedAt: 0 })) : null;
-  const dur = isRandom ? 2950 : 1700;
+  transSlot = isRandom ? transOrbs.map((o, i) => ({ final: null, cur: randomTransOrb(o), stopAt: 3600 + i * 320, stopped: false, stoppedAt: 0 })) : null;
+  let transRolled = false; // 轮转停止时刻才调用 randomizeAll（结果不预先决定）
   const t0 = performance.now();
   (function step(now) {
     if (seq !== transitionSeq) return; // 旧转场链失效
@@ -268,11 +307,19 @@ function startTransition() {
     const p = Math.min(1, el / dur);
     fill.style.width = (p * 100) + '%';
     pct.textContent = Math.floor(p * 100) + '%';
-    if (transSlot) { // 老虎机：未停槽高频换外观，错峰定格
+    if (transSlot) { // 老虎机：第一个槽停止瞬间决定随机结果，再逐槽错峰定格
+      if (!transRolled && el >= transSlot[0].stopAt) {
+        randomizeAll(); // 此刻才真正随机（更新选择屏面板配置）
+        transRolled = true;
+        players = {}; // 同步 players：readConfig 读面板 → 转场定格展示真实随机结果
+        for (const k of panelKeys(gameMode)) players[k] = readConfig(k);
+        transOrbs = transitionOrbs(); // 重读随机后的最终配置
+        transSlot.forEach((s, i) => { s.final = transOrbs[i]; });
+      }
       for (const s of transSlot) {
         if (s.stopped) continue;
-        if (el >= s.stopAt) { s.stopped = true; s.stoppedAt = el; s.cur = s.final; sfx('ui'); }
-        else if (Math.random() < .55) s.cur = randomTransOrb(s.final);
+        if (el >= s.stopAt) { s.stopped = true; s.stoppedAt = el; s.cur = s.final || s.cur; sfx('ui'); }
+        else if (Math.random() < .55) s.cur = randomTransOrb(s.final || s.cur);
       }
     }
     drawTransitionStage(el / 1000);
@@ -398,9 +445,9 @@ function loop(t) {
 }
 
 // ---------------- 事件 ----------------
-$('#btn-again').onclick = () => startTransition();
+$('#btn-again').onclick = () => { transRandom = false; startTransition(); }; // 再战：沿用当前配置（短转场展示，不重新洗牌）
 $('#btn-reconfig').onclick = () => { showScreen('select'); buildPanels(); };
-$('#btn-random2').onclick = randomizeAll;
+$('#btn-random2').onclick = startRandomTransition; // 随机启动（3P/4P 多球入口）
 $('#btn-start2').onclick = startGame;
 // 数值编辑器入口（2P 的 btn-balance 在 select.js 动态生成，3P/4P 在 index.html 静态定义）
 const balanceBtn = $('#btn-balance');
@@ -459,13 +506,10 @@ addEventListener('resize', () => {
 buildPanels();
 requestAnimationFrame(loop);
 
-// URL 参数 ?auto=1 直接开战（用于演示/测试；走随机抽取流程以展示老虎机转场）
+// URL 参数 ?auto=1 直接开战（用于演示/测试；走随机启动流程以展示老虎机转场，结果在轮转停止时随机）
 const qs = new URLSearchParams(location.search);
 if (qs.get('auto') === '1') {
-  randomizeAll();
-  players = {};
-  for (const k of panelKeys(gameMode)) players[k] = readConfig(k);
-  startTransition();
+  startRandomTransition();
 }
 
 // PWA：仅在 http(s) 环境启用（file:// 双击打开时完全跳过，游戏照常运行）

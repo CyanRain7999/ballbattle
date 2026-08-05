@@ -164,11 +164,11 @@ function buildPanels() {
     vs.innerHTML = `
       <div class="vs">VS</div>
       <div class="vs-line"></div>
-      <button class="btn vs-btn" id="btn-random">⚄ 随机配置</button>
+      <button class="btn vs-btn" id="btn-random">⚄ 随机启动</button>
       ${hasEditor ? '<button class="btn vs-btn" id="btn-balance">⚙ 数值</button>' : ''}
       <button class="btn primary vs-btn" id="btn-start">▶ 启动战斗</button>`;
     body.insertBefore(vs, body.children[1]);
-    $('#btn-random').onclick = randomizeAll;
+    $('#btn-random').onclick = startRandomTransition; // 随机启动：进入加载界面后在轮转停止时才决定结果
     $('#btn-start').onclick = startGame;
     const bal = $('#btn-balance');
     if (bal) bal.onclick = () => location.href = 'editor.html'; // 数值编辑器（buildPanels 重建后重新绑定）

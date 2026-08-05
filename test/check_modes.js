@@ -249,19 +249,27 @@ const check = (name, ok, detail) => {
   });
   await sleep(2600);
   check('手动转场后开战', await evalJS(`!!battle && battle.orbs.length === 2`));
-  // 随机抽取：老虎机动画 + 逐球错峰停止
+  // 随机启动：不预先随机 → 10s 长转场（前 5s 轮转，停止时刻才随机化，后 5s 定格展示）
+  const snap = await evalJS(`JSON.stringify(players)`);
   await evalJS(`(() => {
-    randomizeAll();
-    startTransition();
-    return { random: transRandom, slot: transSlot ? transSlot.length : 0, stops: transSlot ? transSlot.map(s => s.stopAt) : [] };
+    startRandomTransition();
+    return { random: transRandom, slot: transSlot ? transSlot.length : 0, stops: transSlot ? transSlot.map(s => s.stopAt) : [], finals: transSlot ? transSlot.map(s => s.final) : [] };
   })()`).then(r => {
-    check('随机抽取开启老虎机', r.random === true && r.slot === 2, JSON.stringify(r));
-    check('老虎机逐球错峰停止', r.stops[0] < r.stops[1], JSON.stringify(r.stops));
+    check('随机启动开启老虎机', r.random === true && r.slot === 2, JSON.stringify(r));
+    check('老虎机逐球错峰停止', r.stops[0] < r.stops[1] && r.stops[0] >= 3000, JSON.stringify(r.stops));
+    check('随机结果不预先决定', r.finals.every(f => f === null), JSON.stringify(r.finals));
   });
-  await sleep(700);
-  check('老虎机滚动中（未全部停止）', await evalJS(`transSlot.some(s => !s.stopped)`));
-  await sleep(2800);
-  check('老虎机转场后开战', await evalJS(`!!battle`));
+  await sleep(3700);
+  const rolled = await evalJS(`(() => {
+    const allStopped = transSlot.every(s => s.stopped);
+    const finalized = transSlot.every(s => s.final !== null);
+    return { allStopped, finalized, playerChanged: JSON.stringify(players) !== ${JSON.stringify(snap)} };
+  })()`);
+  check('轮转停止时随机化已发生', rolled.playerChanged === true, JSON.stringify(rolled));
+  check('轮转错峰未全部停止（约 3.7s）', rolled.allStopped === false, JSON.stringify(rolled));
+  check('定格球为最终配置', rolled.finalized === true, JSON.stringify(rolled));
+  await sleep(6700);
+  check('10 秒转场后开战', await evalJS(`!!battle`));
   // 选择屏压缩：能力卡片区限高滚动
   await evalJS(`showScreen('select'); buildPanels();`);
   check('能力卡片区限高滚动', await evalJS(`(() => {
