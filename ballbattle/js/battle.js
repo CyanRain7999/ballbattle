@@ -179,32 +179,24 @@ const OBSTACLE_LAYOUTS = {
   ],
 };
 // 随机布局生成器（每次开战布局不同）：random 完全随机 4 块；randomsym 左半场随机 2 块 + 右半场镜像（左右公平）
-// 约束：位置范围保证墙距 ≥ .15；任一新块与所有已放块的任一分离轴间隙 ≥ .15（不产生窄缝）
-// 几何上限：.15 间隙 + 块尺寸下 2×2 = 4 块是最大稳定排布
+// 确定性 2×2 象限分离：左列 x∈[.15,.30-w] / 右列 x∈[.45,.85-w]、上行 y∈[.15,.30-h] / 下行 y∈[.45,.85-h]，
+// 数学上保证任意两块水平或竖直间隙 ≥ .15、墙距 ≥ .15（斜对角块由象限分离自动满足）
 function genRandomObstacles(sym) {
-  const GAP = .15;
-  const gapOK = (r, list) => list.every(p => {
-    const gx = Math.max(p.fx - (r.fx + r.fw), r.fx - (p.fx + p.fw));
-    const gy = Math.max(p.fy - (r.fy + r.fh), r.fy - (p.fy + p.fh));
-    return gx >= GAP || gy >= GAP; // 至少一个轴留出球径通道
-  });
   const placed = [];
-  let guard = 0;
   if (sym) {
-    while (placed.length < 4 && guard++ < 500) {
-      const w = rand(.12, .20), h = rand(.12, .20);
-      const x = rand(.15, .425 - w), y = rand(.15, .85 - h); // 左半场；x+w ≤ .425 保证与镜像块间隙 ≥ .15
-      const r = { kind: 'rect', fx: x, fy: y, fw: w, fh: h };
-      const mirror = { kind: 'rect', fx: 1 - x - w, fy: y, fw: w, fh: h };
-      if (!gapOK(r, placed) || !gapOK(mirror, placed) || !gapOK(r, [mirror])) continue; // 含自身镜像间隙检查
-      placed.push(r, mirror);
+    for (let i = 0; i < 2; i++) {
+      const w = rand(.12, .14), h = rand(.12, .14);
+      const y = i === 0 ? rand(.15, .30 - h) : rand(.45, .70 - h); // 上半区 / 下半区（镜像后间隙同保）
+      const x = rand(.15, .30 - w); // 左半场；镜像右块 fx = 1-x-w ∈ [.70, .85-w]，墙距 ≥ .15
+      placed.push({ kind: 'rect', fx: x, fy: y, fw: w, fh: h });
+      placed.push({ kind: 'rect', fx: 1 - x - w, fy: y, fw: w, fh: h });
     }
   } else {
-    while (placed.length < 4 && guard++ < 500) {
-      const w = rand(.12, .20), h = rand(.12, .20);
-      const r = { kind: 'rect', fx: rand(.15, .85 - w), fy: rand(.15, .85 - h), fw: w, fh: h };
-      if (!gapOK(r, placed)) continue;
-      placed.push(r);
+    for (let i = 0; i < 4; i++) {
+      const w = rand(.12, .14), h = rand(.12, .14);
+      const x = i % 2 === 0 ? rand(.15, .30 - w) : rand(.45, .85 - w);
+      const y = i < 2 ? rand(.15, .30 - h) : rand(.45, .85 - h);
+      placed.push({ kind: 'rect', fx: x, fy: y, fw: w, fh: h });
     }
   }
   return placed;
@@ -397,7 +389,7 @@ function startBattle() {
     $('#hud-name-' + sideKey).style.color = o.color.main;
     $('#hud-type-' + sideKey).textContent = TYPE_LABEL[abOf(o.ability).type];
     $('#hud-type-' + sideKey).style.color = typeColor[abOf(o.ability).type];
-    $('#hud-job-' + sideKey).textContent = '◈ ' + [o.ability, o.skill2, o.skill3].filter(Boolean).map(id => abOf(id).name).join(' & '); // 职业名：主 & 副 & 第三
+    $('#hud-job-' + sideKey).textContent = '◈ ' + [o.ability, o.skill2, o.skill3].filter(id => id && id !== 'none').map(id => (abOf(id) || { name: '' }).name).join(' & '); // 职业名：主 & 副 & 第三
     $('#hud-job-' + sideKey).style.color = o.color.bright;
     $('#cd-icon-' + sideKey).textContent = abOf(o.ability).icon;
     // 双/三能力：副/第三能力 CD 行（图标 + 显隐）

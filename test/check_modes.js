@@ -234,7 +234,42 @@ const check = (name, ok, detail) => {
     check('缩圈与障碍共存', r.shrinkLv >= 1 && r.ob === 1, 'shrinkLv=' + r.shrinkLv + ' ob=' + r.ob);
   });
 
-  console.log('== 7. JS 异常 ==');
+  console.log('== 7. 转场特写 + 随机老虎机 + 选择屏压缩 ==');
+  check('转场舞台 canvas 存在', await evalJS(`!!document.getElementById('trans-stage')`));
+  // 手动启动（非随机）：关闭老虎机，转场 1.7s 后开战（先切回 2P 重建面板）
+  await evalJS(`(() => {
+    gameMode = 2;
+    buildPanels();
+    players = {};
+    panelKeys(2).forEach(k => players[k] = readConfig(k));
+    startGame();
+    return { random: transRandom, slot: !!transSlot };
+  })()`).then(r => {
+    check('手动启动关闭老虎机', r.random === false && r.slot === false, JSON.stringify(r));
+  });
+  await sleep(2600);
+  check('手动转场后开战', await evalJS(`!!battle && battle.orbs.length === 2`));
+  // 随机抽取：老虎机动画 + 逐球错峰停止
+  await evalJS(`(() => {
+    randomizeAll();
+    startTransition();
+    return { random: transRandom, slot: transSlot ? transSlot.length : 0, stops: transSlot ? transSlot.map(s => s.stopAt) : [] };
+  })()`).then(r => {
+    check('随机抽取开启老虎机', r.random === true && r.slot === 2, JSON.stringify(r));
+    check('老虎机逐球错峰停止', r.stops[0] < r.stops[1], JSON.stringify(r.stops));
+  });
+  await sleep(700);
+  check('老虎机滚动中（未全部停止）', await evalJS(`transSlot.some(s => !s.stopped)`));
+  await sleep(2800);
+  check('老虎机转场后开战', await evalJS(`!!battle`));
+  // 选择屏压缩：能力卡片区限高滚动
+  await evalJS(`showScreen('select'); buildPanels();`);
+  check('能力卡片区限高滚动', await evalJS(`(() => {
+    const cards = document.getElementById('ab-left');
+    return !!cards && cards.scrollHeight > cards.clientHeight && cards.clientHeight > 0;
+  })()`));
+
+  console.log('== 8. JS 异常 ==');
   check('无未捕获异常', exceptions.length === 0, exceptions.slice(0, 3).join(' | '));
 
   ws.close(); chrome.kill();

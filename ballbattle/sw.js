@@ -15,6 +15,7 @@ const ASSETS = [
   './js/battle.js',
   './js/entities.js',
   './js/hud.js',
+  './js/balance.js',
   './js/ui.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

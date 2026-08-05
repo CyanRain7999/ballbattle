@@ -160,16 +160,18 @@ function buildPanels() {
   if (!multi) {
     const vs = document.createElement('div');
     vs.className = 'vs-col';
+    const hasEditor = !!window.HAS_EDITOR; // 副本（无 editor.html）不生成数值按钮
     vs.innerHTML = `
       <div class="vs">VS</div>
       <div class="vs-line"></div>
       <button class="btn vs-btn" id="btn-random">⚄ 随机配置</button>
-      <button class="btn vs-btn" id="btn-balance">⚙ 数值</button>
+      ${hasEditor ? '<button class="btn vs-btn" id="btn-balance">⚙ 数值</button>' : ''}
       <button class="btn primary vs-btn" id="btn-start">▶ 启动战斗</button>`;
     body.insertBefore(vs, body.children[1]);
     $('#btn-random').onclick = randomizeAll;
     $('#btn-start').onclick = startGame;
-    $('#btn-balance').onclick = () => location.href = 'editor.html'; // 数值编辑器（buildPanels 重建后重新绑定）
+    const bal = $('#btn-balance');
+    if (bal) bal.onclick = () => location.href = 'editor.html'; // 数值编辑器（buildPanels 重建后重新绑定）
   }
   $('#multi-actions').style.display = multi ? 'flex' : 'none';
   // 队伍模式提示（2v2 / BOSS）
@@ -299,12 +301,14 @@ function randomizeAll() {
     }
     renderPreview(side);
   });
+  transRandom = true; // 随机抽取：转场进入老虎机动画（手动配置启动时会清零）
   sfx('ui');
 }
 
-// 启动战斗：读取全部面板配置 → 转场
+// 启动战斗：读取全部面板配置 → 转场（手动配置：关闭老虎机模式）
 function startGame() {
   players = {};
   for (const k of panelKeys(gameMode)) players[k] = readConfig(k);
+  transRandom = false;
   startTransition();
 }

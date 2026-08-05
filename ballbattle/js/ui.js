@@ -1,7 +1,249 @@
 // ---------------- 转场 ----------------
 let transitionSeq = 0; // 转场令牌：连点"再战"时旧定时器失效
+let transRandom = false; // 随机抽取模式：转场进入老虎机动画（select.js 随机配置时置位，手动配置时清零）
+const transCanvas = $('#trans-stage');
+const tctx = transCanvas.getContext('2d');
+let transOrbs = []; // 特写球列表（从 players 构造）
+let transLayoutCache = []; // 当前排布
+let transSlot = null; // 老虎机状态：每球 { final, cur, stopAt, stopped }
+let transW = 0, transH = 0; // 画布 CSS 像素尺寸（绘制坐标基准）
+
+function resizeTrans() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  transCanvas.width = innerWidth * dpr;
+  transCanvas.height = innerHeight * dpr;
+  transCanvas.style.width = innerWidth + 'px';
+  transCanvas.style.height = innerHeight + 'px';
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  transW = innerWidth; transH = innerHeight;
+}
+
+// 特写球（轻量，供 drawOrb 与老虎机使用）
+function transOrbFromCfg(side, cfg) {
+  return { side, name: cfg.name, color: cfg.color, decor: cfg.decor, ability: cfg.ability, skill2: cfg.skill2, skill3: cfg.skill3 };
+}
+function transitionOrbs() {
+  const list = panelKeys(gameMode).map((k, i) => {
+    const c = players[k] || { name: 'PLAYER-' + (i + 1), color: COLORS[i % COLORS.length], decor: 'ring', ability: ABILITIES[0].id };
+    return transOrbFromCfg(k, c);
+  });
+  if (gameMode === 6) { // BOSS 特写（能力随机，不显示具体能力名）
+    const bc = makeBossCfg();
+    list.push(transOrbFromCfg('boss', { name: 'BOSS', color: bc.color, decor: bc.decor, ability: null }));
+  }
+  return list;
+}
+function randomTransOrb(proto) {
+  const a = ABILITIES[Math.floor(Math.random() * ABILITIES.length)];
+  const extra = Math.random() < .4 ? ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id : null;
+  const extra3 = extra && Math.random() < .4 ? ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id : null;
+  return {
+    name: proto.name,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    decor: DECORS[Math.floor(Math.random() * DECORS.length)].id,
+    ability: a.id, skill2: extra, skill3: extra3,
+  };
+}
+
+// 选人特写排布：斜角 / 三角 / 菱形 / 2v2 左右斜列 / BOSS 四角+中央（刻意避免横平竖直）
+function transLayout(mode, n) {
+  const W = transW, H = transH;
+  const cx = W / 2, cy = H * .42;
+  const R = Math.min(W, H);
+  if (mode === 2) return [
+    { x: cx - R * .20, y: cy - R * .10, r: R * .13, a: -.5 },
+    { x: cx + R * .20, y: cy + R * .10, r: R * .13, a: .5 },
+  ];
+  if (mode === 3) return [
+    { x: cx, y: cy - R * .15, r: R * .115, a: 0 },
+    { x: cx - R * .17, y: cy + R * .14, r: R * .115, a: -1.05 },
+    { x: cx + R * .17, y: cy + R * .14, r: R * .115, a: 1.05 },
+  ];
+  if (mode === 5) return [ // 蓝队左侧斜列、红队右侧斜列
+    { x: cx - R * .26, y: cy - R * .11, r: R * .10, a: -.45, team: 'blue' },
+    { x: cx - R * .15, y: cy + R * .11, r: R * .10, a: -.9, team: 'blue' },
+    { x: cx + R * .26, y: cy - R * .11, r: R * .10, a: .45, team: 'red' },
+    { x: cx + R * .15, y: cy + R * .11, r: R * .10, a: .9, team: 'red' },
+  ];
+  if (mode === 6) return [
+    { x: cx - R * .23, y: cy - R * .17, r: R * .095, a: -1.4, team: 'players' },
+    { x: cx + R * .23, y: cy - R * .17, r: R * .095, a: 1.4, team: 'players' },
+    { x: cx - R * .17, y: cy + R * .16, r: R * .095, a: -1.1, team: 'players' },
+    { x: cx + R * .17, y: cy + R * .16, r: R * .095, a: 1.1, team: 'players' },
+    { x: cx, y: cy - R * .02, r: R * .16, a: 0, boss: true, team: 'boss' },
+  ];
+  return [ // mode 4 菱形
+    { x: cx, y: cy - R * .16, r: R * .10, a: 0 },
+    { x: cx - R * .18, y: cy + R * .05, r: R * .10, a: -1.57 },
+    { x: cx + R * .18, y: cy + R * .05, r: R * .10, a: 1.57 },
+    { x: cx, y: cy + R * .20, r: R * .10, a: 3.14 },
+  ];
+}
+function transTeamColor(side) {
+  if (gameMode === 5) return side === 'blue' ? '#2f6bff' : '#ff2d55';
+  if (gameMode === 6) return side === 'boss' ? '#ff2d55' : '#2dff8f';
+  return null;
+}
+
+// 特写舞台绘制（老虎机动画 + 斜角排布 + 弧线连接 + 扫描光 + 模式标签/VS/锁定光效）
+const MODE_LABELS = { 2: '双球对决', 3: '三方混战', 4: '四方混战', 5: '2V2 团战', 6: '4V1 BOSS' };
+function drawTransitionStage(t) {
+  const W = transW, H = transH;
+  tctx.clearRect(0, 0, W, H);
+  const orbs = transOrbs || [], layout = transLayoutCache || [];
+  // 背景浮尘
+  for (let i = 0; i < 30; i++) {
+    const px = ((i * 173.31 + t * 24) % (W + 40)) - 20;
+    const py = ((i * 97.71 + t * 16 * (i % 2 ? 1 : -1)) % (H + 40)) - 20;
+    tctx.fillStyle = `rgba(0,229,255,${.06 + .1 * Math.sin(t * 2 + i)})`;
+    tctx.fillRect(px, py, 2, 2);
+  }
+  // 弧线连接（贝塞尔，非直线非水平竖直）
+  for (let i = 0; i < orbs.length; i++) {
+    for (let j = i + 1; j < orbs.length; j++) {
+      const A = layout[i], B = layout[j];
+      const cA = layout[i].team ? transTeamColor(layout[i].team) : orbs[i].color.main;
+      const cB = layout[j].team ? transTeamColor(layout[j].team) : orbs[j].color.main;
+      const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+      const off = (B.x - A.x) * .28; // 弧线垂直偏摆
+      tctx.save();
+      tctx.strokeStyle = cA; tctx.globalAlpha = .14;
+      tctx.lineWidth = 1.4; tctx.setLineDash([10, 12]); tctx.lineDashOffset = -t * 40;
+      tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.quadraticCurveTo(mx + off, my - off, B.x, B.y); tctx.stroke();
+      tctx.strokeStyle = cB; tctx.globalAlpha = .2;
+      tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.quadraticCurveTo(mx - off, my + off, B.x, B.y); tctx.stroke();
+      tctx.restore();
+    }
+  }
+  // 顶部模式标签（微倾斜，不横平竖直）
+  tctx.save();
+  tctx.translate(W / 2, 44); tctx.rotate(-.045);
+  tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+  tctx.font = '700 15px Consolas,monospace';
+  tctx.letterSpacing = '.3em';
+  tctx.fillStyle = 'rgba(0,229,255,.85)'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 14;
+  tctx.fillText('◆ ' + (MODE_LABELS[gameMode] || gameMode + 'P') + ' ◆', 0, 0);
+  tctx.restore();
+  // 第一遍：光晕与队伍底环（全部画完再画球，避免后画的大光晕盖住前面的球）
+  orbs.forEach((o, i) => {
+    const L = layout[i];
+    const cur = transSlot ? transSlot[i].cur : o;
+    const wob = L.r * .05;
+    const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
+    const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
+    const g = tctx.createRadialGradient(x, y, L.r * .2, x, y, L.r * 2.5);
+    g.addColorStop(0, hexA(cur.color.main, L.boss ? .2 : .32)); // BOSS 光晕压低避免吞掉玩家球
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    tctx.fillStyle = g;
+    tctx.beginPath(); tctx.arc(x, y, L.r * 2.5, 0, TAU); tctx.fill();
+    if (L.team) {
+      const tc = transTeamColor(L.team);
+      tctx.save();
+      tctx.strokeStyle = hexA(tc, .5); tctx.lineWidth = 3; tctx.setLineDash([26, 18]); tctx.lineDashOffset = -t * 46;
+      tctx.beginPath(); tctx.arc(x, y, L.r + 12, 0, TAU); tctx.stroke();
+      tctx.restore();
+    }
+  });
+  // 第二遍：球体 + 名字 + 能力名 + 锁定光效（保证球体不被光晕遮挡）
+  orbs.forEach((o, i) => {
+    const L = layout[i];
+    const slot = transSlot ? transSlot[i] : null;
+    const cur = slot ? slot.cur : o;
+    const wob = L.r * .05;
+    const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
+    const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
+    // 老虎机未停：残影拖尾
+    if (slot && !slot.stopped) {
+      for (let k = 1; k <= 2; k++) {
+        const ox = x + Math.cos(t * 15 + i * 3) * k * 9;
+        const oy = y + Math.sin(t * 13 + i * 4) * k * 9;
+        tctx.globalAlpha = .15 / k;
+        drawOrb(tctx, { x: ox, y: oy, r: L.r * .96, angle: t * 2 + i, color: cur.color, decor: cur.decor, history: null, shieldT: 0, rushT: 0, flash: 0 }, t);
+      }
+      tctx.globalAlpha = 1;
+    }
+    // 主体球
+    const orb = { x, y, r: L.r, angle: t * .9 + L.a + i, color: cur.color, decor: cur.decor, history: null, shieldT: 0, rushT: 0, flash: 0 };
+    drawOrb(tctx, orb, t);
+    // 老虎机定格光效：停止后 0.5s 内扩散光环 + LOCKED
+    if (slot && slot.stoppedAt) {
+      const d = t * 1000 - slot.stoppedAt;
+      if (d >= 0 && d < 500) {
+        const k = d / 500;
+        tctx.save();
+        tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = (1 - k) * .9;
+        tctx.lineWidth = 3.5;
+        tctx.beginPath(); tctx.arc(x, y, L.r + 10 + k * L.r * .9, 0, TAU); tctx.stroke();
+        tctx.globalAlpha = (1 - k) * .5;
+        tctx.font = '700 15px Consolas,monospace'; tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+        tctx.fillStyle = '#fff';
+        tctx.fillText('◈ LOCKED', x, y - L.r - 26);
+        tctx.restore();
+      }
+    }
+    // 名字（BOSS 大字放球上方避免与底部日志重叠）
+    tctx.save();
+    tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+    const nameY = L.boss ? y - L.r - 34 : y + L.r + 26;
+    if (L.boss) {
+      tctx.font = '900 44px "Segoe UI",sans-serif';
+      tctx.fillStyle = '#ff5060'; tctx.shadowColor = '#ff2d55'; tctx.shadowBlur = 26;
+      tctx.fillText('BOSS', x, nameY);
+    } else {
+      tctx.font = '700 21px "Segoe UI","Microsoft YaHei",sans-serif';
+      tctx.fillStyle = cur.color.bright; tctx.shadowColor = cur.color.main; tctx.shadowBlur = 12;
+      tctx.fillText(o.name, x, nameY);
+    }
+    tctx.shadowBlur = 0;
+    // 能力名（半透明底衬提升可读性；老虎机滚动中显示当前滚动能力；BOSS 不显示）
+    if (!L.boss) {
+      const abName = [cur.ability, cur.skill2, cur.skill3].filter(id => id && id !== 'none').map(id => (abOf(id) || { name: '' }).name).join(' & ');
+      const ay = nameY + 26;
+      tctx.font = '12px Consolas,monospace'; // 先设字体再测量，底衬宽度才准确
+      const tx = tctx.measureText('◈ ' + abName).width;
+      tctx.fillStyle = 'rgba(2,6,14,.62)';
+      tctx.fillRect(x - tx / 2 - 8, ay - 11, tx + 16, 22);
+      tctx.fillStyle = slot && !slot.stopped ? '#ffe9a0' : '#9fc4e8';
+      tctx.fillText('◈ ' + abName, x, ay);
+    }
+    tctx.restore();
+    // 队伍名标签（2v2 蓝/红）
+    if (L.team && !L.boss) {
+      tctx.save();
+      tctx.font = '700 15px "Microsoft YaHei",sans-serif';
+      tctx.fillStyle = hexA(transTeamColor(L.team), .95);
+      const ly = y - L.r - (slot && slot.stoppedAt && t * 1000 - slot.stoppedAt < 500 ? 52 : 26);
+      tctx.fillText(transTeamColor(L.team) === '#2f6bff' ? '蓝队' : L.team === 'players' ? '玩家队' : '红队', x, ly);
+      tctx.restore();
+    }
+  });
+  // 2P 斜角 VS 大字（不横平竖直）
+  if (gameMode === 2 && layout.length >= 2) {
+    const vx = (layout[0].x + layout[1].x) / 2, vy = (layout[0].y + layout[1].y) / 2 + Math.min(transW, transH) * .13;
+    tctx.save();
+    tctx.translate(vx, vy); tctx.rotate(.16);
+    tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+    tctx.font = '900 84px "Segoe UI",sans-serif';
+    tctx.fillStyle = 'rgba(0,229,255,.16)';
+    tctx.fillText('VS', 3, 3);
+    tctx.fillStyle = '#cfeaff'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 30;
+    tctx.fillText('VS', 0, 0);
+    tctx.restore();
+  }
+  // 扫描光带
+  tctx.save();
+  tctx.globalAlpha = .055;
+  const sx = (t * 300) % (W + 400) - 200;
+  tctx.fillStyle = '#00e5ff';
+  tctx.beginPath();
+  tctx.moveTo(sx, 0); tctx.lineTo(sx + 140, 0); tctx.lineTo(sx - 50, H); tctx.lineTo(sx - 190, H);
+  tctx.closePath(); tctx.fill();
+  tctx.restore();
+}
+
 function startTransition() {
   const seq = ++transitionSeq;
+  const isRandom = transRandom;
   showScreen('transition');
   const log = $('#trans-log'), fill = $('#trans-fill'), pct = $('#trans-pct');
   log.textContent = ''; fill.style.width = '0%'; pct.textContent = '0%';
@@ -12,13 +254,28 @@ function startTransition() {
     '[ OK ] 同步光学传感器 SENSOR-SYNC ........',
     '>>> 战斗协议启动，祝好运',
   ];
-  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * 330));
-  const t0 = performance.now(), dur = 1900;
+  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * 380));
+  // 特写初始化（老虎机：随机模式逐球错峰停止，高速刷新球外观）
+  resizeTrans(); // 先定画布尺寸（transW/transH），布局计算依赖它
+  transOrbs = transitionOrbs();
+  transLayoutCache = transLayout(gameMode, transOrbs.length);
+  transSlot = isRandom ? transOrbs.map((o, i) => ({ final: o, cur: randomTransOrb(o), stopAt: 420 + i * 400, stopped: false, stoppedAt: 0 })) : null;
+  const dur = isRandom ? 2950 : 1700;
+  const t0 = performance.now();
   (function step(now) {
     if (seq !== transitionSeq) return; // 旧转场链失效
-    const p = Math.min(1, (now - t0) / dur);
+    const el = now - t0;
+    const p = Math.min(1, el / dur);
     fill.style.width = (p * 100) + '%';
     pct.textContent = Math.floor(p * 100) + '%';
+    if (transSlot) { // 老虎机：未停槽高频换外观，错峰定格
+      for (const s of transSlot) {
+        if (s.stopped) continue;
+        if (el >= s.stopAt) { s.stopped = true; s.stoppedAt = el; s.cur = s.final; sfx('ui'); }
+        else if (Math.random() < .55) s.cur = randomTransOrb(s.final);
+      }
+    }
+    drawTransitionStage(el / 1000);
     if (p < 1) requestAnimationFrame(step);
     else { sfx('win'); setTimeout(() => { if (seq === transitionSeq) startBattle(); }, 220); }
   })(t0);
@@ -192,18 +449,23 @@ addEventListener('keydown', e => {
     if (state === 'battle' && battle) $('#btn-pause').click();
   }
 });
-addEventListener('resize', () => { if (state === 'battle') resizeCanvas(); if (state === 'result') resizeFx(); });
+addEventListener('resize', () => {
+  if (state === 'battle') resizeCanvas();
+  if (state === 'result') resizeFx();
+  if (state === 'transition') { resizeTrans(); if (transLayoutCache.length) transLayoutCache = transLayout(gameMode, transOrbs.length); } // 转场中 resize：同步重排特写
+});
 
 // ---------------- 启动 ----------------
 buildPanels();
 requestAnimationFrame(loop);
 
-// URL 参数 ?auto=1 直接开战（用于演示/测试）
+// URL 参数 ?auto=1 直接开战（用于演示/测试；走随机抽取流程以展示老虎机转场）
 const qs = new URLSearchParams(location.search);
 if (qs.get('auto') === '1') {
   randomizeAll();
-  // 直接调用选择屏按钮（与手动点击等效）
-  $('#btn-start').click();
+  players = {};
+  for (const k of panelKeys(gameMode)) players[k] = readConfig(k);
+  startTransition();
 }
 
 // PWA：仅在 http(s) 环境启用（file:// 双击打开时完全跳过，游戏照常运行）
