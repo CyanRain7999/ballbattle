@@ -155,17 +155,24 @@ document.querySelectorAll('#mode-switch .mode-btn').forEach(b => {
     sfx('ui');
   };
 });
-// 玩法规则按钮：缩圈/双能力 = 开关；障碍 = 循环切换布局（none→十字墙→四角块→迷宫块→旋转隔板）
+// 玩法规则按钮：缩圈 = 开关；障碍 = 循环切换布局（none→十字墙→四角块→迷宫块→旋转隔板→九宫格→八块环→之字柱→随机→对称随机）；双能力/火力全开 = 开关且互斥（界面形态切换）
 document.querySelectorAll('#rules-switch .rule-btn').forEach(b => {
   b.onclick = () => {
     const r = b.dataset.rule;
     if (r === 'obstacles') {
       const order = ['none', 'cross', 'corners', 'blocks', 'spinner', 'grid3', 'ring', 'slalom', 'random', 'randomsym'];
       gameRules.obstacles = order[(order.indexOf(gameRules.obstacles) + 1) % order.length];
+    } else if (r === 'multiSkill') {
+      gameRules.multiSkill = !gameRules.multiSkill;
+      if (gameRules.multiSkill) gameRules.firepower = false; // 互斥
+    } else if (r === 'firepower') {
+      gameRules.firepower = !gameRules.firepower;
+      if (gameRules.firepower) gameRules.multiSkill = false; // 互斥
     } else {
       gameRules[r] = !gameRules[r];
     }
     syncRulesUI();
+    if (r === 'multiSkill' || r === 'firepower') buildPanels(); // 切换界面形态（能力槽视图）
     sfx('ui');
   };
 });

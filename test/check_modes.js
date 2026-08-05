@@ -67,7 +67,7 @@ const check = (name, ok, detail) => {
   check('选择屏渲染新色板', await evalJS(`document.querySelectorAll('#panel-left .swatch').length === 16`), await evalJS(`document.querySelectorAll('#panel-left .swatch').length`));
 
   console.log('== 2. 规则按钮 UI ==');
-  check('规则按钮存在', await evalJS(`document.querySelectorAll('#rules-switch .rule-btn').length === 3`));
+  check('规则按钮存在', await evalJS(`document.querySelectorAll('#rules-switch .rule-btn').length === 4`));
   await evalJS(`document.querySelector('[data-rule=shrink]').click()`);
   check('缩圈开关', await evalJS(`gameRules.shrink === true`));
   await evalJS(`document.querySelector('[data-rule=obstacles]').click()`);
@@ -76,6 +76,48 @@ const check = (name, ok, detail) => {
   await evalJS(`document.querySelector('[data-rule=multiSkill]').click()`);
   check('双能力开关', await evalJS(`gameRules.multiSkill === true`));
   check('双能力区显示', await evalJS(`document.getElementById('sec-skill2-left').style.display !== 'none'`));
+
+  console.log('== 2b. 双能力自动分配 + 火力全开（三能力） ==');
+  check('双能力开启后副槽自动分配', await evalJS(`document.getElementById('skill2-left').value !== 'none'`), await evalJS(`document.getElementById('skill2-left').value`));
+  check('火力全开与双能力互斥', await evalJS(`(() => {
+    document.querySelector('[data-rule=firepower]').click();
+    return gameRules.firepower === true && gameRules.multiSkill === false;
+  })()`));
+  check('火力全开界面切换（3 能力槽 + 装饰/卡片隐藏）', await evalJS(`(() => {
+    const p = document.getElementById('panel-left');
+    return !!document.getElementById('skill1-left') && !!document.getElementById('skill2-left') && !!document.getElementById('skill3-left')
+      && !document.getElementById('dc-left') && !document.getElementById('ab-left');
+  })()`));
+  check('槽②③自动分配且互不相同', await evalJS(`(() => {
+    const s1 = document.getElementById('skill1-left').value;
+    const s2 = document.getElementById('skill2-left').value;
+    const s3 = document.getElementById('skill3-left').value;
+    return s2 !== 'none' && s3 !== 'none' && s1 !== s2 && s1 !== s3 && s2 !== s3;
+  })()`));
+  // 三能力开战：shield + repair 副槽同时施放，职业名 "xx & yy & zz"
+  await evalJS(`(() => {
+    document.getElementById('skill1-left').value = 'pulse';
+    document.getElementById('skill2-left').value = 'shield';
+    document.getElementById('skill3-left').value = 'repair';
+    document.getElementById('skill1-right').value = 'missile';
+    document.getElementById('skill2-right').value = 'burn';
+    document.getElementById('skill3-right').value = 'combo';
+    players = {};
+    panelKeys(gameMode).forEach(k => players[k] = readConfig(k));
+    startBattle();
+    const L = battle.left;
+    L.cd2 = L.maxCd2 - .05; L.cd3 = L.maxCd3 - .05;
+    updateBattle(.1);
+    return { s2: L.skill2, s3: L.skill3, shieldT: L.shieldT, regenT: L.regenT,
+      job: document.getElementById('hud-job-left').textContent,
+      row3: document.getElementById('cdrow3-left').style.display };
+  })()`).then(r => {
+    check('三能力战斗生效（shield+repair 均施放）', r && r.s2 === 'shield' && r.s3 === 'repair' && r.shieldT > 0 && r.regenT > 0, JSON.stringify(r));
+    check('职业名 xx & yy & zz', r && /&/.test(r.job), r && r.job);
+    check('HUD 第三行 CD 条显示', r && r.row3 === 'flex');
+  });
+  // 恢复双能力形态供后续测试使用
+  await evalJS(`document.querySelector('[data-rule=multiSkill]').click();`);
 
   console.log('== 3. 双能力（副能力独立 CD / 施放 / 伤害缩放） ==');
   // 主 pulse + 副 shield：选择屏读取配置 → 直接开战（跳过转场动画）

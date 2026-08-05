@@ -19,8 +19,8 @@ function fmtTime(t) {
 let state = 'select';
 let players = {};   // { left: cfg, right: cfg }（多球模式为 { p0, p1, p2, p3 }）
 let gameMode = 2;   // 2 / 3 / 4 球模式
-// 玩法规则（与人数正交，选择屏勾选）：shrink 缩圈 / obstacles 障碍布局('none'|'cross'|'corners'|'blocks'|'spinner') / multiSkill 双能力
-let gameRules = { shrink: false, obstacles: 'none', multiSkill: false };
+// 玩法规则（与人数正交，选择屏勾选）：shrink 缩圈 / obstacles 障碍布局('none'|'cross'|'corners'|'blocks'|'spinner'|'grid3'|'ring'|'slalom'|'random'|'randomsym') / multiSkill 双能力 / firepower 火力全开（三能力）
+let gameRules = { shrink: false, obstacles: 'none', multiSkill: false, firepower: false };
 let battle = null;  // 战斗实例
 
 // ---------------- 屏幕管理 ----------------

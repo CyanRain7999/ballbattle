@@ -3,12 +3,15 @@ function makeOrb(side, cfg) {
   // 数值配置层：按球种（能力）取数值——所有使用该能力的球共用一套配置；
   // 模拟器可传 cfg.stats 显式覆盖
   const st = cfg.stats ? orbStats(cfg.ability, cfg.stats) : orbStats(cfg.ability);
-  // 双能力模式：副能力独立 CD（+30% 惩罚），伤害 ×0.5 由 castAbility 的 skillMul 处理
+  // 双/三能力：副能力独立 CD（+30% 惩罚），伤害 ×0.5 由 castAbility 的 skillMul 处理
   const skill2 = cfg.skill2 && cfg.skill2 !== 'none' ? cfg.skill2 : null;
+  const skill3 = cfg.skill3 && cfg.skill3 !== 'none' ? cfg.skill3 : null;
   const maxCd2 = skill2 ? abOf(skill2).cd * st.cdMult * BALANCE.global.cdMult * 1.3 : 0;
+  const maxCd3 = skill3 ? abOf(skill3).cd * st.cdMult * BALANCE.global.cdMult * 1.3 : 0;
   return {
     side, name: cfg.name, color: cfg.color, decor: cfg.decor, ability: cfg.ability,
     skill2, cd2: maxCd2 * .55, maxCd2,
+    skill3, cd3: maxCd3 * .55, maxCd3,
     x: 0, y: 0, vx: 0, vy: 0, r: st.r,
     hp: st.maxHp, maxHp: st.maxHp,
     maxCd: ab.cd * st.cdMult * BALANCE.global.cdMult, cd: ab.cd * .55 * st.cdMult * BALANCE.global.cdMult,
@@ -38,11 +41,16 @@ function makeOrb(side, cfg) {
   };
 }
 
-// 4v1 BOSS：系统配置的强力球（techx 主 + curse 副；高血量/大体积/慢速/技能更快/伤害更高）
+// 4v1 BOSS：系统配置的强力球（主/副能力每局随机抽取，数值固定：高血量/大体积/慢速/技能更快/伤害更高）
 function makeBossCfg() {
+  const pool = ABILITIES.filter(a => a.id !== 'railgun'); // railgun 的 0.05s 主槽 CD 机制不适合 AI 自动释放
+  const main = pool[Math.floor(Math.random() * pool.length)];
+  const sub = Math.random() < .55
+    ? pool.filter(a => a.id !== main.id)[Math.floor(Math.random() * (pool.length - 1))].id // 主副不重复
+    : null;
   return {
     name: 'BOSS', color: { name: '猩红核心', main: '#ff2d55', bright: '#ff8fa8' }, decor: 'spike',
-    ability: 'techx', skill2: 'curse',
+    ability: main.id, skill2: sub,
     stats: { maxHp: 1800, r: 62, cruise: 260, dmgMult: 1.3, skillMult: 1.3, collideMult: 1, healMult: .5, cdMult: .8 },
   };
 }
@@ -81,6 +89,10 @@ function buildHUD() {
         <div class="cd-icon" id="cd2-icon-${o.side}">◉</div>
         <div class="cdtrack"><div class="cdfill cd2fill" id="cd2-${o.side}"></div></div>
       </div>
+      <div class="cdrow cdrow3" id="cdrow3-${o.side}">
+        <div class="cd-icon" id="cd3-icon-${o.side}">◉</div>
+        <div class="cdtrack"><div class="cdfill cd3fill" id="cd3-${o.side}"></div></div>
+      </div>
       <div class="cdrow railrow" id="railrow-${o.side}">
         <div class="rail-icon" style="color:#ffd0ff">◎</div>
         <div class="cdtrack"><div class="railfill" id="rail2-${o.side}"></div></div>
@@ -113,75 +125,85 @@ function buildHUD() {
   vs.textContent = n === 2 ? 'VS' : n === 5 ? '2V2 团战' : n === 6 ? '4V1 BOSS' : n + 'P 混战';
 }
 
-// 双能力辅助：主/副能力任一匹配即视为拥有该能力（碰撞被动/常驻被动均生效）
-const hasAb = (o, id) => o.ability === id || o.skill2 === id;
+// 双/三能力辅助：主/副/第三能力任一匹配即视为拥有该能力（碰撞被动/常驻被动均生效）
+const hasAb = (o, id) => o.ability === id || o.skill2 === id || o.skill3 === id;
 
 // ---------------- 玩法规则：障碍物 ----------------
 // 障碍布局（相对坐标 0~1，运行时按当前场地换算 → 缩圈时自动跟随缩放）
+// 通道设计原则：所有间隙（块-块 / 块-边界 / 边中缝 / 错位缝）≥ 0.15 相对坐标
+// （场地 720px 时 = 108px ≥ 球直径 100px），保证球能自由穿过、不会卡死
 const OBSTACLE_LAYOUTS = {
-  cross: [ // 中心十字墙：分成四区，边缘留通道
-    { kind: 'rect', fx: .44, fy: .08, fw: .12, fh: .84 },
-    { kind: 'rect', fx: .08, fy: .44, fw: .84, fh: .12 },
+  cross: [ // 十字墙·核+四臂：中央方核 + 四条短臂（臂-核 / 臂-墙 / 象限间缝均 ≥ .15，四象限互通）
+    { kind: 'rect', fx: .44, fy: .43, fw: .12, fh: .14 },
+    { kind: 'rect', fx: .44, fy: .15, fw: .12, fh: .13 },
+    { kind: 'rect', fx: .44, fy: .72, fw: .12, fh: .13 },
+    { kind: 'rect', fx: .15, fy: .44, fw: .13, fh: .12 },
+    { kind: 'rect', fx: .72, fy: .44, fw: .13, fh: .12 },
   ],
-  corners: [ // 四角方块：压缩中央走廊
-    { kind: 'rect', fx: .04, fy: .04, fw: .16, fh: .16 },
-    { kind: 'rect', fx: .80, fy: .04, fw: .16, fh: .16 },
-    { kind: 'rect', fx: .04, fy: .80, fw: .16, fh: .16 },
-    { kind: 'rect', fx: .80, fy: .80, fw: .16, fh: .16 },
+  corners: [ // 四角方块：墙距 .15，中央走廊 .38
+    { kind: 'rect', fx: .15, fy: .15, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .69, fy: .15, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .15, fy: .69, fw: .16, fh: .16 },
+    { kind: 'rect', fx: .69, fy: .69, fw: .16, fh: .16 },
   ],
-  blocks: [ // 迷宫块：两侧竖块 + 上下横块交错
-    { kind: 'rect', fx: .16, fy: .28, fw: .14, fh: .44 },
-    { kind: 'rect', fx: .70, fy: .28, fw: .14, fh: .44 },
-    { kind: 'rect', fx: .30, fy: .12, fw: .40, fh: .14 },
-    { kind: 'rect', fx: .30, fy: .74, fw: .40, fh: .14 },
+  blocks: [ // 迷宫块：上/下横档 + 左右短竖块错位（中央区上下口均 .15，双向连通）
+    { kind: 'rect', fx: .30, fy: .15, fw: .40, fh: .12 },
+    { kind: 'rect', fx: .30, fy: .73, fw: .40, fh: .12 },
+    { kind: 'rect', fx: .16, fy: .42, fw: .14, fh: .16 },
+    { kind: 'rect', fx: .70, fy: .45, fw: .14, fh: .13 },
   ],
-  spinner: [ // 中央旋转隔板（battle.spinnerA 驱动旋转）
+  spinner: [ // 中央旋转隔板（battle.spinnerA 驱动旋转；杆端到边 ≥ .3）
     { kind: 'seg', fx1: .5, fy1: .3, fx2: .5, fy2: .7 },
   ],
-  grid3: [ // 九宫格：四角 + 中心（边中点留通道）
-    { kind: 'rect', fx: .10, fy: .10, fw: .22, fh: .22 },
-    { kind: 'rect', fx: .68, fy: .10, fw: .22, fh: .22 },
-    { kind: 'rect', fx: .39, fy: .39, fw: .22, fh: .22 },
-    { kind: 'rect', fx: .10, fy: .68, fw: .22, fh: .22 },
-    { kind: 'rect', fx: .68, fy: .68, fw: .22, fh: .22 },
+  grid3: [ // 九宫格：四角 + 中心（角块-墙 .15、角块-中心缝 .155）
+    { kind: 'rect', fx: .15, fy: .15, fw: .13, fh: .13 },
+    { kind: 'rect', fx: .72, fy: .15, fw: .13, fh: .13 },
+    { kind: 'rect', fx: .435, fy: .435, fw: .13, fh: .13 },
+    { kind: 'rect', fx: .15, fy: .72, fw: .13, fh: .13 },
+    { kind: 'rect', fx: .72, fy: .72, fw: .13, fh: .13 },
   ],
-  ring: [ // 八块环：四边各两块围圈（角与边中缝留通道；角块相切不重叠）
-    { kind: 'rect', fx: .14, fy: .05, fw: .30, fh: .09 },
-    { kind: 'rect', fx: .56, fy: .05, fw: .30, fh: .09 },
-    { kind: 'rect', fx: .14, fy: .86, fw: .30, fh: .09 },
-    { kind: 'rect', fx: .56, fy: .86, fw: .30, fh: .09 },
-    { kind: 'rect', fx: .05, fy: .14, fw: .09, fh: .30 },
-    { kind: 'rect', fx: .05, fy: .56, fw: .09, fh: .30 },
-    { kind: 'rect', fx: .86, fy: .14, fw: .09, fh: .30 },
-    { kind: 'rect', fx: .86, fy: .56, fw: .09, fh: .30 },
+  ring: [ // 八块环：四角 L 形封死（无入口死区），四边中点留缝 .16，环形走廊宽 ≥ .4
+    { kind: 'rect', fx: .15, fy: .15, fw: .27, fh: .15 },
+    { kind: 'rect', fx: .58, fy: .15, fw: .27, fh: .15 },
+    { kind: 'rect', fx: .15, fy: .70, fw: .27, fh: .15 },
+    { kind: 'rect', fx: .58, fy: .70, fw: .27, fh: .15 },
+    { kind: 'rect', fx: .15, fy: .15, fw: .15, fh: .27 },
+    { kind: 'rect', fx: .15, fy: .58, fw: .15, fh: .27 },
+    { kind: 'rect', fx: .70, fy: .15, fw: .15, fh: .27 },
+    { kind: 'rect', fx: .70, fy: .58, fw: .15, fh: .27 },
   ],
-  slalom: [ // 之字柱：上排两块 → 中排一块 → 下排两块（S 型走位）
-    { kind: 'rect', fx: .08, fy: .08, fw: .20, fh: .12 },
-    { kind: 'rect', fx: .72, fy: .08, fw: .20, fh: .12 },
-    { kind: 'rect', fx: .40, fy: .44, fw: .20, fh: .12 },
-    { kind: 'rect', fx: .08, fy: .80, fw: .20, fh: .12 },
-    { kind: 'rect', fx: .72, fy: .80, fw: .20, fh: .12 },
+  slalom: [ // 之字横档：上档右伸 → 中档左伸 → 下档右伸（开口全宽，S 型绕行）
+    { kind: 'rect', fx: .50, fy: .15, fw: .35, fh: .12 },
+    { kind: 'rect', fx: .15, fy: .44, fw: .35, fh: .12 },
+    { kind: 'rect', fx: .50, fy: .73, fw: .35, fh: .12 },
   ],
 };
-// 随机布局生成器（每次开战布局不同）：random 完全随机 6 块；randomsym 左半场随机 3 块 + 右半场镜像（左右公平）
+// 随机布局生成器（每次开战布局不同）：random 完全随机 4 块；randomsym 左半场随机 2 块 + 右半场镜像（左右公平）
+// 约束：位置范围保证墙距 ≥ .15；任一新块与所有已放块的任一分离轴间隙 ≥ .15（不产生窄缝）
+// 几何上限：.15 间隙 + 块尺寸下 2×2 = 4 块是最大稳定排布
 function genRandomObstacles(sym) {
-  const overlap = (a, b) => !(a.fx + a.fw < b.fx || b.fx + b.fw < a.fx || a.fy + a.fh < b.fy || b.fy + b.fh < a.fy);
+  const GAP = .15;
+  const gapOK = (r, list) => list.every(p => {
+    const gx = Math.max(p.fx - (r.fx + r.fw), r.fx - (p.fx + p.fw));
+    const gy = Math.max(p.fy - (r.fy + r.fh), r.fy - (p.fy + p.fh));
+    return gx >= GAP || gy >= GAP; // 至少一个轴留出球径通道
+  });
   const placed = [];
   let guard = 0;
   if (sym) {
-    while (placed.length < 6 && guard++ < 300) {
-      const w = rand(.10, .16), h = rand(.10, .16);
-      const x = rand(.06, .44 - w), y = rand(.08, .92 - h); // 左半场
+    while (placed.length < 4 && guard++ < 500) {
+      const w = rand(.12, .20), h = rand(.12, .20);
+      const x = rand(.15, .425 - w), y = rand(.15, .85 - h); // 左半场；x+w ≤ .425 保证与镜像块间隙 ≥ .15
       const r = { kind: 'rect', fx: x, fy: y, fw: w, fh: h };
-      if (placed.some(p => overlap(p, r))) continue;
-      placed.push(r);
-      placed.push({ kind: 'rect', fx: 1 - x - w, fy: y, fw: w, fh: h }); // 左右镜像
+      const mirror = { kind: 'rect', fx: 1 - x - w, fy: y, fw: w, fh: h };
+      if (!gapOK(r, placed) || !gapOK(mirror, placed) || !gapOK(r, [mirror])) continue; // 含自身镜像间隙检查
+      placed.push(r, mirror);
     }
   } else {
-    while (placed.length < 6 && guard++ < 300) {
-      const w = rand(.10, .18), h = rand(.10, .18);
-      const r = { kind: 'rect', fx: rand(.06, .94 - w), fy: rand(.06, .94 - h), fw: w, fh: h };
-      if (placed.some(p => overlap(p, r))) continue;
+    while (placed.length < 4 && guard++ < 500) {
+      const w = rand(.12, .20), h = rand(.12, .20);
+      const r = { kind: 'rect', fx: rand(.15, .85 - w), fy: rand(.15, .85 - h), fw: w, fh: h };
+      if (!gapOK(r, placed)) continue;
       placed.push(r);
     }
   }
@@ -297,7 +319,7 @@ function startBattle() {
     const o = makeOrb(i === 0 ? 'left' : i === 1 ? 'right' : 'p' + i, cfg);
     orbs.push(o);
   });
-  // 4v1 BOSS：追加系统配置的第 5 个球（techx 主 + railgun 副）
+  // 4v1 BOSS：追加系统配置的第 5 个球（主/副能力随机抽取）
   if (n === 6) orbs.push(makeOrb('boss', makeBossCfg()));
   // 开局站位与发射速度
   if (n === 5) { // 2v2：蓝队（left/p2）左半场上下、红队（right/p3）右半场上下，朝对方半场
@@ -375,15 +397,20 @@ function startBattle() {
     $('#hud-name-' + sideKey).style.color = o.color.main;
     $('#hud-type-' + sideKey).textContent = TYPE_LABEL[abOf(o.ability).type];
     $('#hud-type-' + sideKey).style.color = typeColor[abOf(o.ability).type];
-    $('#hud-job-' + sideKey).textContent = '◈ ' + abOf(o.ability).name;
+    $('#hud-job-' + sideKey).textContent = '◈ ' + [o.ability, o.skill2, o.skill3].filter(Boolean).map(id => abOf(id).name).join(' & '); // 职业名：主 & 副 & 第三
     $('#hud-job-' + sideKey).style.color = o.color.bright;
     $('#cd-icon-' + sideKey).textContent = abOf(o.ability).icon;
-    // 双能力：副能力 CD 行（图标 + 显隐）
+    // 双/三能力：副/第三能力 CD 行（图标 + 显隐）
     const row2 = $('#cdrow2-' + sideKey);
     if (o.skill2) {
       row2.style.display = 'flex';
       $('#cd2-icon-' + sideKey).textContent = abOf(o.skill2).icon;
     } else row2.style.display = 'none';
+    const row3 = $('#cdrow3-' + sideKey);
+    if (o.skill3) {
+      row3.style.display = 'flex';
+      $('#cd3-icon-' + sideKey).textContent = abOf(o.skill3).icon;
+    } else row3.style.display = 'none';
     $('#hp-' + sideKey).style.width = '100%';
     $('#cd-' + sideKey).style.width = '0%';
   });
@@ -719,15 +746,17 @@ function fireAbility(o) {
   o.cd = 0;
   castAbility(o, o.ability, 1);
 }
-// 统一施放入口：主能力 mult=1；副能力 mult=.5（伤害 ×0.5 由 hitOrb 的 skillMul 缩放，平衡代价）。
+// 统一施放入口：主能力 mult=1；副/第三能力 mult=.5（伤害 ×0.5 由 hitOrb 的 skillMul 缩放，平衡代价）。
+// slotHint：施放槽位（1 主 / 2 副 / 3 第三），由调用点明确传入，避免重复选择能力时 boomerang/fang 误判槽位。
 // 施放期间临时切换 o.ability，使 case 内部对 o.ability 的判断（如 tech1/tech2 的 fast 分支）自动正确；
 // 施放结束恢复主能力；副能力不干扰主能力的动态 maxCd（slash 低血提速 / fang 命中缩短）。
-function castAbility(o, id, mult) {
+function castAbility(o, id, mult, slotHint) {
   const prevAbility = o.ability;
   o.ability = id;
   const prevMaxCd = o.maxCd;
   // 副能力：伤害 ×0.5 以 2.5s 削弱窗口生效（窗口内该球全部技能伤害打折，弹道/召唤物延迟结算同样覆盖）
   if (mult !== 1) { o.skillMul = mult; o.skillMulUntil = battle.time + 2.5; }
+  const slot = slotHint || (mult === 1 ? 1 : (o.skill2 === id ? 2 : 3));
   const foe = nearestFoe(o);
   switch (id) {
     case 'pulse': {
@@ -951,9 +980,9 @@ function castAbility(o, id, mult) {
       sfx('repair');
       break;
     // —— V3 新能力 ——
-    case 'boomerang': { // 回旋镖：直线飞出，命中折返，收回后重置 cd（镖体已放大）
+    case 'boomerang': { // 回旋镖：直线飞出，命中折返，收回后重置对应槽位 cd（镖体已放大）
       const a = Math.atan2(foe.y - o.y, foe.x - o.x);
-      battle.proj.push({ type: 'boomerang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, life: 7, r: 36, hitFoe: false, returning: false, skill2: mult !== 1 });
+      battle.proj.push({ type: 'boomerang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, life: 7, r: 36, hitFoe: false, returning: false, slot });
       sfx('boomerang');
       break;
     }
@@ -1031,7 +1060,7 @@ function castAbility(o, id, mult) {
     case 'fang': { // 兽牙：每 cd 自动射箭，命中缩短下次间隔（独立字段 fangCd，下限 0.8）
       o.maxCd = o.fangCd || 3; // 同步当前间隔（防与 slash 等动态 maxCd 串扰）
       const a = Math.atan2(foe.y - o.y, foe.x - o.x);
-      battle.proj.push({ type: 'fang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 864, vy: Math.sin(a) * 864, life: 1.1, r: 6, skill2: mult !== 1 }); // 弹速 +60%（540→864）
+      battle.proj.push({ type: 'fang', owner: o.side, x: o.x, y: o.y, vx: Math.cos(a) * 864, vy: Math.sin(a) * 864, life: 1.1, r: 6, slot }); // 弹速 +60%（540→864）
       sfx('fang');
       break;
     }
@@ -1420,10 +1449,14 @@ function updateBattle(dt) {
     if (!o.alive) continue;
     o.cd += dt;
     if (o.cd >= o.maxCd) fireAbility(o);
-    // 双能力：副能力独立 CD（+30% 惩罚在 maxCd2），伤害 ×0.5 由 castAbility 的 skillMul 处理
+    // 双/三能力：副/第三能力独立 CD（+30% 惩罚在 maxCd2/maxCd3），伤害 ×0.5 由 castAbility 的 skillMul 处理
     if (o.skill2) {
       o.cd2 += dt;
-      if (o.cd2 >= o.maxCd2) { o.cd2 = 0; castAbility(o, o.skill2, .5); }
+      if (o.cd2 >= o.maxCd2) { o.cd2 = 0; castAbility(o, o.skill2, .5, 2); }
+    }
+    if (o.skill3) {
+      o.cd3 += dt;
+      if (o.cd3 >= o.maxCd3) { o.cd3 = 0; castAbility(o, o.skill3, .5, 3); }
     }
     if (o.shieldT > 0) o.shieldT -= dt;
     if (o.invT > 0) o.invT -= dt;
@@ -1453,7 +1486,7 @@ function updateBattle(dt) {
     if (o.frostT > 0) o.frostT -= dt;
     if (o.sonicT > 0) o.sonicT -= dt;
     // 冰霜常驻剑：剑尖触及敌人即命中（50% 伤害 + 减速易伤），剑长与技能释放一致
-    if (o.ability === 'frost' && o.alive) {
+    if (hasAb(o, 'frost') && o.alive) {
       const n = Math.min(4, 1 + Math.floor((1 - o.hp / o.maxHp) / .3));
       const range = 220 + 60 * (n - 1);
       const foe2 = nearestFoe(o);
@@ -1753,8 +1786,10 @@ function updateBattle(dt) {
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (owner.alive && Math.hypot(owner.x - p.x, owner.y - p.y) < owner.r + p.r) { // 收回
           p.life = 0;
-          if (p.hitFoe) { // 命中过敌人 → 重置对应槽位 CD（主能力 / 副能力）
-            if (p.skill2) owner.cd2 = owner.maxCd2; else owner.cd = owner.maxCd;
+          if (p.hitFoe) { // 命中过敌人 → 重置对应槽位 CD（主/副/第三能力）
+            if (p.slot === 3) owner.cd3 = owner.maxCd3;
+            else if (p.slot === 2) owner.cd2 = owner.maxCd2;
+            else owner.cd = owner.maxCd;
             addText(owner.x, owner.y - 40, '镖回收 · CD 重置', '#ffe9a0', 13);
             sfx('boomerang');
           }
@@ -1813,7 +1848,7 @@ function updateBattle(dt) {
         const own = ownerOf(p.owner);
         hitOrb(foe, 10, own, true);
         own.fangCd = Math.max(.8, (own.fangCd || 3) - .3); // 命中永久缩短射击间隔（独立字段，下限 0.8）
-        if (!p.skill2) own.maxCd = own.fangCd; // 副能力箭矢不干扰主能力动态 CD
+        if (!p.slot || p.slot === 1) own.maxCd = own.fangCd; // 副/第三槽箭矢不干扰主能力动态 CD
         addText(foe.x, foe.y - 34, '兽牙命中 · 间隔-' + own.fangCd.toFixed(1), '#ffe9a0', 12);
         addSparks(p.x, p.y, 5, '#ffe9a0');
       }

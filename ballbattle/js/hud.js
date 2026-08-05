@@ -54,13 +54,20 @@ function updateHUD() {
     hpEl.style.width = hpPct + '%';
     $('#hpnum-' + s).textContent = Math.round(hpPct) + '%';
     $('#cd-' + s).style.width = Math.min(100, o.cd / o.maxCd * 100) + '%';
-    // 双能力：副能力独立 CD 条（无副能力时隐藏）
+    // 双/三能力：副/第三能力独立 CD 条（无则隐藏）
     const row2 = $('#cdrow2-' + s);
     if (row2) {
       if (o.skill2) {
         row2.style.display = 'flex';
         $('#cd2-' + s).style.width = Math.min(100, o.cd2 / o.maxCd2 * 100) + '%';
       } else row2.style.display = 'none';
+    }
+    const row3 = $('#cdrow3-' + s);
+    if (row3) {
+      if (o.skill3) {
+        row3.style.display = 'flex';
+        $('#cd3-' + s).style.width = Math.min(100, o.cd3 / o.maxCd3 * 100) + '%';
+      } else row3.style.display = 'none';
     }
     // 轨道炮双模式独立进度条
     const row = $('#railrow-' + s);

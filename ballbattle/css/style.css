@@ -312,3 +312,15 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;
 .boss-fill{background:linear-gradient(90deg,#ff2d55,#ff8090);box-shadow:0 0 10px rgba(255,45,85,.9)}
 .hud-boss .hud-status{font-size:10px;color:#ffb8c0}
 .multi-hint{font-size:11px;color:var(--cyan);letter-spacing:.08em;opacity:.85;text-align:center;width:100%}
+/* 第三能力 CD 条（紫色系，与主琥珀/副青色区分） */
+.cdrow3{display:none;opacity:.8}
+.cdrow3 .cd-icon{color:#c07aff;border-color:#4a2a6b}
+.cd3fill{height:100%;width:0%;background:#c07aff;box-shadow:0 0 6px rgba(192,122,255,.7)}
+/* 火力全开能力槽视图 */
+.psec-fp{display:flex;flex-direction:column;gap:8px}
+.fp-slot{display:flex;align-items:center;gap:8px}
+.fp-no{width:18px;height:18px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#02131c;background:linear-gradient(90deg,#00b8d9,#0084ff)}
+.fp-slot:nth-child(3) .fp-no{background:linear-gradient(90deg,#7c4dff,#a44dff)}
+.fp-slot:nth-child(4) .fp-no{background:linear-gradient(90deg,#ff4dd2,#ff2d55)}
+.fp-slot .skill2-sel{flex:1}

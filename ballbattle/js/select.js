@@ -7,6 +7,8 @@ function panelKeys(n) { return n === 2 ? ['left', 'right'] : ['p0', 'p1', 'p2', 
 function buildPanel(side, idx) {
   const pid = 'panel-' + side;
   const p = $('#' + pid);
+  const fp = gameRules.firepower;
+  const abOpts = ABILITIES.map(a => `<option value="${a.id}">${a.icon} ${a.name}（${a.type === 'melee' ? '近战' : '远程'}）</option>`).join('');
   p.innerHTML = `
     <div class="panel-flux"></div>
     <div class="panel-head">
@@ -18,6 +20,13 @@ function buildPanel(side, idx) {
       <div class="seclabel">◈ 颜色 COLOR</div>
       <div class="swatches" id="sw-${side}"></div>
     </div>
+    ${fp ? `
+    <div class="psec psec-fp">
+      <div class="seclabel">◈ 火力全开 · 能力槽 <span class="sechint">槽①必选 · 槽②③可留空（副槽 CD+30% 伤害×0.5）</span></div>
+      <label class="fp-slot"><span class="fp-no">①</span><select class="skill2-sel" id="skill1-${side}">${abOpts}</select></label>
+      <label class="fp-slot"><span class="fp-no">②</span><select class="skill2-sel" id="skill2-${side}"><option value="none">⚪ 无</option>${abOpts}</select></label>
+      <label class="fp-slot"><span class="fp-no">③</span><select class="skill2-sel" id="skill3-${side}"><option value="none">⚪ 无</option>${abOpts}</select></label>
+    </div>` : `
     <div class="psec">
       <div class="seclabel">◈ 装饰 DECOR</div>
       <div class="cards" id="dc-${side}"></div>
@@ -30,9 +39,10 @@ function buildPanel(side, idx) {
       <div class="seclabel">◈ 副能力 ABILITY II <span class="sechint">双能力模式</span></div>
       <select class="skill2-sel" id="skill2-${side}">
         <option value="none">⚪ 无（单能力）</option>
-        ${ABILITIES.map(a => `<option value="${a.id}">${a.icon} ${a.name}（${a.type === 'melee' ? '近战' : '远程'}）</option>`).join('')}
+        ${abOpts}
       </select>
-    </div>`;
+    </div>`}`;
+  // 颜色（两种形态都有）
   // 颜色
   const sw = $('#sw-' + side);
   COLORS.forEach((c, i) => {
@@ -44,9 +54,9 @@ function buildPanel(side, idx) {
     el.onclick = () => { sw.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel')); el.classList.add('sel'); sfx('ui'); renderPreview(side); };
     sw.appendChild(el);
   });
-  // 装饰
+  // 装饰（火力全开形态隐藏）
   const dc = $('#dc-' + side);
-  DECORS.forEach((d, i) => {
+  if (dc) DECORS.forEach((d, i) => {
     const el = document.createElement('div');
     el.className = 'card' + (i === 1 ? ' sel' : '');
     const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
@@ -58,9 +68,9 @@ function buildPanel(side, idx) {
     const g = cv.getContext('2d');
     drawOrb(g, { x: 32, y: 32, r: 20, angle: Math.PI / 4, color: { main: '#9be8ff', bright: '#ffffff' }, decor: d.id, history: null, shieldT: 0, rushT: 0, flash: 0 }, 0);
   });
-  // 能力
+  // 能力卡片（火力全开形态隐藏，改由能力槽 select 配置）
   const ab = $('#ab-' + side);
-  ABILITIES.forEach((a, i) => {
+  if (ab) ABILITIES.forEach((a, i) => {
     const el = document.createElement('div');
     el.className = 'card' + (i === 0 ? ' sel' : '');
     const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
@@ -100,6 +110,35 @@ function syncRulesUI() {
   // 双能力开关联动各面板副能力区
   document.querySelectorAll('.psec-skill2').forEach(el => {
     el.style.display = gameRules.multiSkill ? '' : 'none';
+  });
+  autoFillSlots(); // 开箱即用：自动填充空能力槽
+}
+// 自动分配：双能力模式副槽、火力全开模式槽②③默认给随机能力（与已选互不相同）
+function autoFillSlots() {
+  const pick = exclude => {
+    let v = ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id;
+    let g = 0;
+    while (exclude.includes(v) && g++ < 30) v = ABILITIES[Math.floor(Math.random() * ABILITIES.length)].id;
+    return v;
+  };
+  panelKeys(gameMode).forEach(side => {
+    if (gameRules.firepower) {
+      const s1 = $('#skill1-' + side), s2 = $('#skill2-' + side), s3 = $('#skill3-' + side);
+      if (!s1 || !s2 || !s3) return;
+      const main = s1.value || 'none';
+      if (!s2.value || s2.value === 'none') s2.value = pick([main]);
+      if (!s3.value || s3.value === 'none') s3.value = pick([main, s2.value]);
+    } else if (gameRules.multiSkill) {
+      const sel = $('#skill2-' + side);
+      if (!sel) return;
+      if (sel.value === 'none') {
+        const cards = $('#ab-' + side);
+        const main = cards && cards.querySelector('.card.sel')
+          ? ABILITIES[[...cards.querySelectorAll('.card')].findIndex(c => c.classList.contains('sel'))].id
+          : ABILITIES[0].id;
+        sel.value = pick([main]);
+      }
+    }
   });
 }
 
@@ -200,12 +239,16 @@ function readConfig(side) {
   const cIdx = [...p.querySelectorAll('.swatch')].findIndex(x => x.classList.contains('sel'));
   const dIdx = [...p.querySelectorAll('#dc-' + side + ' .card')].findIndex(x => x.classList.contains('sel'));
   const aIdx = [...p.querySelectorAll('#ab-' + side + ' .card')].findIndex(x => x.classList.contains('sel'));
+  const fp = gameRules.firepower;
+  const s1 = fp && $('#skill1-' + side) ? $('#skill1-' + side).value : null;
+  const s2el = $('#skill2-' + side);
   return {
     name: $('#pname-' + side).value.trim() || (DEFAULT_NAMES[idx] || 'PLAYER-' + (idx + 1)),
     color: COLORS[Math.max(0, cIdx)],
     decor: DECORS[Math.max(0, dIdx)].id,
-    ability: ABILITIES[Math.max(0, aIdx)].id,
-    skill2: gameRules.multiSkill ? ($('#skill2-' + side) ? $('#skill2-' + side).value : 'none') : null,
+    ability: s1 || ABILITIES[Math.max(0, aIdx)].id,
+    skill2: (fp || gameRules.multiSkill) ? (s2el ? s2el.value : 'none') : null,
+    skill3: fp ? ($('#skill3-' + side) ? $('#skill3-' + side).value : 'none') : null,
   };
 }
 
@@ -236,15 +279,23 @@ function randomizeAll() {
     usedC.push(c.id); usedD.push(d.id); usedA.push(a.id);
     const p = $('#' + 'panel-' + side);
     [...p.querySelectorAll('.swatch')].forEach((x, i2) => x.classList.toggle('sel', COLORS[i2].name === c.name));
-    [...p.querySelectorAll('#dc-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', DECORS[i2].id === d.id));
-    [...p.querySelectorAll('#ab-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', ABILITIES[i2].id === a.id));
-    // 双能力：30% 概率无副能力，否则随机一个与主能力不同的
-    const s2sel = $('#skill2-' + side);
-    if (s2sel) {
-      if (gameRules.multiSkill && Math.random() > .3) {
-        const s2 = pick(ABILITIES.filter(x => x.id !== a.id));
-        s2sel.value = s2.id;
-      } else s2sel.value = 'none';
+    if (gameRules.firepower) { // 火力全开：随机 3 槽（60% 三能力 / 40% 双能力）
+      const s1 = $('#skill1-' + side), s2 = $('#skill2-' + side), s3 = $('#skill3-' + side);
+      if (s1 && s2 && s3) {
+        const b = pick(ABILITIES.filter(x => x.id !== a.id));
+        s1.value = a.id; s2.value = b.id;
+        if (Math.random() < .6) s3.value = pick(ABILITIES.filter(x => x.id !== a.id && x.id !== b.id)).id;
+        else s3.value = 'none';
+      }
+    } else {
+      [...p.querySelectorAll('#dc-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', DECORS[i2].id === d.id));
+      [...p.querySelectorAll('#ab-' + side + ' .card')].forEach((x, i2) => x.classList.toggle('sel', ABILITIES[i2].id === a.id));
+      // 双能力：总是给一个与主能力不同的副能力（开箱即用）
+      const s2sel = $('#skill2-' + side);
+      if (s2sel) {
+        if (gameRules.multiSkill) s2sel.value = pick(ABILITIES.filter(x => x.id !== a.id)).id;
+        else s2sel.value = 'none';
+      }
     }
     renderPreview(side);
   });
