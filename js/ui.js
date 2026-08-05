@@ -104,7 +104,7 @@ function drawTransitionStage(t, dur) {
   for (let i = 0; i < 30; i++) {
     const px = ((i * 173.31 + t * 24) % (W + 40)) - 20;
     const py = ((i * 97.71 + t * 16 * (i % 2 ? 1 : -1)) % (H + 40)) - 20;
-    tctx.fillStyle = `rgba(0,229,255,${.06 + .1 * Math.sin(t * 2 + i)})`;
+    tctx.fillStyle = `rgba(0,229,255,${Math.max(0, .03 + .05 * Math.sin(t * 2 + i))})`; // 浮尘降亮（护眼），clamp 防负 alpha
     tctx.fillRect(px, py, 2, 2);
   }
   // 弧线连接（贝塞尔，非直线非水平竖直）
@@ -116,10 +116,10 @@ function drawTransitionStage(t, dur) {
       const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
       const off = (B.x - A.x) * .28; // 弧线垂直偏摆
       tctx.save();
-      tctx.strokeStyle = cA; tctx.globalAlpha = .14;
-      tctx.lineWidth = 1.4; tctx.setLineDash([10, 12]); tctx.lineDashOffset = -t * 40;
+      tctx.strokeStyle = cA; tctx.globalAlpha = .07;
+      tctx.lineWidth = 1.2; tctx.setLineDash([10, 12]); tctx.lineDashOffset = -t * 40;
       tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.quadraticCurveTo(mx + off, my - off, B.x, B.y); tctx.stroke();
-      tctx.strokeStyle = cB; tctx.globalAlpha = .2;
+      tctx.strokeStyle = cB; tctx.globalAlpha = .1;
       tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.quadraticCurveTo(mx - off, my + off, B.x, B.y); tctx.stroke();
       tctx.restore();
     }
@@ -130,7 +130,7 @@ function drawTransitionStage(t, dur) {
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
   tctx.font = '700 15px Consolas,monospace';
   tctx.letterSpacing = '.3em';
-  tctx.fillStyle = 'rgba(0,229,255,.85)'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 14;
+  tctx.fillStyle = 'rgba(0,229,255,.65)'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 7;
   tctx.fillText('◆ ' + (MODE_LABELS[gameMode] || gameMode + 'P') + ' ◆', 0, 0);
   tctx.restore();
   // 第一遍：光晕、队伍底环、展示框（全部画完再画球，避免后画的大光晕盖住前面的球）
@@ -142,14 +142,14 @@ function drawTransitionStage(t, dur) {
     const x = L.x + Math.sin(t * 1.3 + i * 2.1) * wob * 2;
     const y = L.y + Math.cos(t * 1.1 + i * 1.7) * wob * 2;
     const g = tctx.createRadialGradient(x, y, L.r * .2, x, y, L.r * 2.5);
-    g.addColorStop(0, hexA(cur.color.main, (L.boss ? .2 : .32) * liArr[i])); // BOSS 光晕压低避免吞掉玩家球；亮度随点亮进度
+    g.addColorStop(0, hexA(cur.color.main, (L.boss ? .14 : .22) * liArr[i])); // BOSS 光晕压低避免吞掉玩家球；亮度随点亮进度
     g.addColorStop(1, 'rgba(0,0,0,0)');
     tctx.fillStyle = g;
     tctx.beginPath(); tctx.arc(x, y, L.r * 2.5, 0, TAU); tctx.fill();
     if (L.team) {
       const tc = transTeamColor(L.team);
       tctx.save();
-      tctx.strokeStyle = hexA(tc, .5 * liArr[i]); tctx.lineWidth = 3; tctx.setLineDash([26, 18]); tctx.lineDashOffset = -t * 46;
+      tctx.strokeStyle = hexA(tc, .32 * liArr[i]); tctx.lineWidth = 2; tctx.setLineDash([26, 18]); tctx.lineDashOffset = -t * 46;
       tctx.beginPath(); tctx.arc(x, y, L.r + 12, 0, TAU); tctx.stroke();
       tctx.restore();
     }
@@ -159,10 +159,10 @@ function drawTransitionStage(t, dur) {
     const li = liArr[i];
     tctx.save();
     tctx.translate(x, y); tctx.rotate(t * .4 + i * 1.1);
-    tctx.strokeStyle = hexA(cur.color.main, (stopped ? .8 : .38) * (.25 + .75 * li));
+    tctx.strokeStyle = hexA(cur.color.main, (stopped ? .55 : .26) * (.25 + .75 * li));
     tctx.lineWidth = stopped ? 2.5 : 1.5;
     if (!stopped) tctx.setLineDash([12, 9]);
-    tctx.shadowColor = cur.color.main; tctx.shadowBlur = stopped ? 14 * li : 0;
+    tctx.shadowColor = cur.color.main; tctx.shadowBlur = stopped ? 7 * li : 0;
     tctx.beginPath();
     for (let k = 0; k < 8; k++) {
       const a = k / 8 * TAU - Math.PI / 2;
@@ -173,7 +173,7 @@ function drawTransitionStage(t, dur) {
     tctx.setLineDash([]); tctx.shadowBlur = 0;
     for (let k = 0; k < 8; k++) {
       const a = k / 8 * TAU - Math.PI / 2;
-      tctx.fillStyle = hexA(cur.color.bright, (stopped ? .85 : .3) * (.25 + .75 * li));
+      tctx.fillStyle = hexA(cur.color.bright, (stopped ? .55 : .2) * (.25 + .75 * li));
       tctx.beginPath(); tctx.arc(Math.cos(a) * fr, Math.sin(a) * fr, stopped ? 3.2 : 2, 0, TAU); tctx.fill();
     }
     tctx.restore();
@@ -192,7 +192,7 @@ function drawTransitionStage(t, dur) {
       for (let k = 1; k <= 2; k++) {
         const ox = x + Math.cos(t * 15 + i * 3) * k * 9;
         const oy = y + Math.sin(t * 13 + i * 4) * k * 9;
-        tctx.globalAlpha = .15 / k * li;
+        tctx.globalAlpha = .09 / k * li; // 残影降亮
         drawOrb(tctx, { x: ox, y: oy, r: L.r * .96, angle: t * 2 + i, color: cur.color, decor: cur.decor, history: null, shieldT: 0, rushT: 0, flash: 0 }, t);
       }
       tctx.globalAlpha = 1;
@@ -208,24 +208,24 @@ function drawTransitionStage(t, dur) {
       tctx.beginPath(); tctx.arc(x, y, L.r, 0, TAU); tctx.fill();
       tctx.restore();
     }
-    // 高光脉冲：点亮瞬间白光大泛光 + 十字光斑 + 扩散环，0.45s 衰减回正常（光污染）
+    // 高光脉冲：点亮瞬间柔光 + 十字光斑 + 扩散环（低强度护眼版）
     if (hg > 0) {
       tctx.save();
-      const wg = tctx.createRadialGradient(x, y, 0, x, y, L.r * 3);
-      wg.addColorStop(0, `rgba(255,255,255,${.8 * hg})`);
-      wg.addColorStop(.35, `rgba(255,255,255,${.3 * hg})`);
+      const wg = tctx.createRadialGradient(x, y, 0, x, y, L.r * 2.3);
+      wg.addColorStop(0, `rgba(255,255,255,${.3 * hg})`);
+      wg.addColorStop(.35, `rgba(255,255,255,${.1 * hg})`);
       wg.addColorStop(1, 'rgba(255,255,255,0)');
       tctx.fillStyle = wg;
-      tctx.beginPath(); tctx.arc(x, y, L.r * 3, 0, TAU); tctx.fill();
-      tctx.strokeStyle = `rgba(255,255,255,${.6 * hg})`;
-      tctx.lineWidth = 2.5;
+      tctx.beginPath(); tctx.arc(x, y, L.r * 2.3, 0, TAU); tctx.fill();
+      tctx.strokeStyle = `rgba(255,255,255,${.2 * hg})`;
+      tctx.lineWidth = 1.4;
       tctx.beginPath();
-      tctx.moveTo(x - L.r * 2.6, y); tctx.lineTo(x + L.r * 2.6, y);
-      tctx.moveTo(x, y - L.r * 2.6); tctx.lineTo(x, y + L.r * 2.6);
+      tctx.moveTo(x - L.r * 2.2, y); tctx.lineTo(x + L.r * 2.2, y);
+      tctx.moveTo(x, y - L.r * 2.2); tctx.lineTo(x, y + L.r * 2.2);
       tctx.stroke();
       const er = L.r * (1.3 + (1 - hg) * .9); // 扩散环（从内向外撑开）
-      tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = .55 * hg;
-      tctx.lineWidth = 2.5;
+      tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = .2 * hg;
+      tctx.lineWidth = 1.6;
       tctx.beginPath(); tctx.arc(x, y, er, 0, TAU); tctx.stroke();
       tctx.restore();
     }
@@ -235,11 +235,11 @@ function drawTransitionStage(t, dur) {
       if (d >= 0 && d < 500) {
         const k = d / 500;
         tctx.save();
-        tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = (1 - k) * .9;
-        tctx.lineWidth = 3.5;
+        tctx.strokeStyle = cur.color.bright; tctx.globalAlpha = (1 - k) * .5;
+        tctx.lineWidth = 2.4;
         tctx.beginPath(); tctx.arc(x, y, L.r + 10 + k * L.r * .9, 0, TAU); tctx.stroke();
-        tctx.globalAlpha = (1 - k) * .5;
-        tctx.font = '700 15px Consolas,monospace'; tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+        tctx.globalAlpha = (1 - k) * .28;
+        tctx.font = '700 13px Consolas,monospace'; tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
         tctx.fillStyle = '#fff';
         tctx.fillText('◈ LOCKED', x, y - L.r - 26);
         tctx.restore();
@@ -251,11 +251,11 @@ function drawTransitionStage(t, dur) {
     const nameY = L.boss ? y - L.r - 34 : y + L.r + 26;
     if (L.boss) {
       tctx.font = '900 44px "Segoe UI",sans-serif';
-      tctx.fillStyle = '#ff5060'; tctx.shadowColor = '#ff2d55'; tctx.shadowBlur = 26;
+      tctx.fillStyle = '#ff5060'; tctx.shadowColor = '#ff2d55'; tctx.shadowBlur = 14;
       tctx.fillText('BOSS', x, nameY);
     } else {
       tctx.font = '700 21px "Segoe UI","Microsoft YaHei",sans-serif';
-      tctx.fillStyle = cur.color.bright; tctx.shadowColor = cur.color.main; tctx.shadowBlur = 12;
+      tctx.fillStyle = cur.color.bright; tctx.shadowColor = cur.color.main; tctx.shadowBlur = 7;
       tctx.fillText(o.name, x, nameY);
     }
     tctx.shadowBlur = 0;
@@ -288,21 +288,21 @@ function drawTransitionStage(t, dur) {
     tctx.translate(vx, vy); tctx.rotate(.16);
     tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
     tctx.font = '900 84px "Segoe UI",sans-serif';
-    tctx.fillStyle = 'rgba(0,229,255,.16)';
+    tctx.fillStyle = 'rgba(0,229,255,.08)';
     tctx.fillText('VS', 3, 3);
-    tctx.fillStyle = '#cfeaff'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 30;
+    tctx.fillStyle = '#cfeaff'; tctx.shadowColor = '#00e5ff'; tctx.shadowBlur = 14;
     tctx.fillText('VS', 0, 0);
     tctx.restore();
   }
-  // 全屏泛光：点亮瞬间的全局光污染（微弱白光叠加）
+  // 全屏泛光：点亮瞬间的全局柔光（极微弱，护眼）
   const hgMax = hgArr.reduce((a, b) => Math.max(a, b), 0);
   if (hgMax > .01) {
-    tctx.fillStyle = `rgba(190,225,255,${hgMax * .06})`;
+    tctx.fillStyle = `rgba(190,225,255,${hgMax * .016})`;
     tctx.fillRect(0, 0, W, H);
   }
   // 扫描光带
   tctx.save();
-  tctx.globalAlpha = .055;
+  tctx.globalAlpha = .025; // 扫描光带降亮
   const sx = (t * 300) % (W + 400) - 200;
   tctx.fillStyle = '#00e5ff';
   tctx.beginPath();

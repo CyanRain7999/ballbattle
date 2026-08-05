@@ -1,0 +1,20 @@
+[PASS] 龙卷风 tornado 实体
+[PASS] 石子 pebble 实体
+[PASS] 毒雾 venomcloud 实体
+[PASS] 熔岩 lavaburst 实体
+[PASS] 星轨 starpoint 实体
+[PASS] 蛛网 web 实体
+[PASS] 鬼魂 wraith 实体（幽灵强化）
+[PASS] 龙卷风半径渐扩（>100，V6）
+[PASS] 蛛网一次 3 张（≥3，V6）
+[PASS] 隐身状态 ghostT 触发
+[PASS] 网缚状态 webT 触发
+[PASS] 毒层状态 venomN 触发
+[PASS] 定身状态 stunT 触发
+[PASS] 弹射撞墙伤害（单次 20-40，V6）
+[PASS] 苍赫球 wuliangball 实体（V7）
+[PASS] 无量合成（注入 80 间距 → 芘生成，V7）
+[PASS] 幽灵庇护（隐身减伤 50%，V7）
+[PASS] 无 JS 异常
+
+=== V4 新球种验证全部通过 ===
