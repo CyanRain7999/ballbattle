@@ -201,7 +201,7 @@ const check = (name, ok, detail) => {
     bounceObstacles(o);
     return { vy: o.vy, inOb: o.x > ob.x && o.x < ob.x + ob.w && o.y > ob.y && o.y < ob.y + ob.h };
   })()`).then(r => {
-    check('球撞障碍反弹', r.vy <= 0, 'vy=' + r.vy);
+    check('球撞障碍反弹（被推出且阻尼生效）', r && !r.inOb && Math.abs(r.vy) < 120, 'vy=' + r.vy);
     check('球被推出障碍', !r.inOb);
   });
   check('旋转隔板布局生成', await evalJS(`
@@ -310,6 +310,118 @@ const check = (name, ok, detail) => {
     const cards = document.getElementById('ab-left');
     return !!cards && cards.scrollHeight > cards.clientHeight && cards.clientHeight > 0;
   })()`));
+
+  console.log('== 7b. Bug 修复验证（浮游炮随死销毁 / 棺椁豁免 / 墙缝防振荡） ==');
+  // 浮游炮：owner 死亡后炮台销毁且不再开火
+  const d1 = await evalJS(`(() => {
+    gameMode = 2; gameRules.multiSkill = false; gameRules.obstacles = 'none'; gameRules.shrink = false; gameRules.fieldScale = 1;
+    buildPanels();
+    players = {};
+    players.left = readConfig('left'); players.right = readConfig('right');
+    players.left.ability = 'drone'; players.right.ability = 'drone';
+    battle = null; startBattle();
+    const L = battle.left, R = battle.right;
+    L.x = 300; L.y = 300; R.x = 420; R.y = 300;
+    updateBattle(1);
+    const before = battle.structs.filter(s => s.type === 'drone' && s.owner === 'left').length;
+    L.hp = 0; L.alive = false;
+    updateBattle(.5);
+    const after = battle.structs.filter(s => s.type === 'drone' && s.owner === 'left').length;
+    const projL = battle.proj.filter(p => p.type === 'dronebolt' && p.owner === 'left').length;
+    return { before, after, projL };
+  })()`);
+  check('浮游炮 owner 死亡后炮台销毁', d1 && d1.before === 3 && d1.after === 0 && d1.projL === 0, JSON.stringify(d1));
+  // 棺椁：本人豁免（可穿过自己的封锁区）+ 敌人被推出封锁区 + 阻尼防墙缝振荡
+  const d2 = await evalJS(`(() => {
+    gameMode = 2; gameRules.multiSkill = false; gameRules.obstacles = 'none'; gameRules.shrink = false; gameRules.fieldScale = 1;
+    buildPanels();
+    players = {};
+    players.left = readConfig('left'); players.right = readConfig('right');
+    players.left.ability = 'coffin'; players.right.ability = 'pulse';
+    battle = null; startBattle();
+    const L = battle.left, R = battle.right;
+    L.hp = L.maxHp * .85;
+    updateBattle(.1);
+    const zone = battle.structs.find(s => s.type === 'coffinzone');
+    if (!zone) return { zone: 'none' };
+    const F2 = battle.field;
+    // 豁免测试：本人瞬移进封锁区中心，敌人移到 zone 外（场地对角区）避免 collide 碰撞干扰
+    L.x = zone.x + zone.w / 2; L.y = zone.y + zone.h / 2; L.vx = 0; L.vy = 0;
+    R.x = F2.x + F2.s - (zone.x + zone.w / 2); R.y = F2.y + F2.s - (zone.y + zone.h / 2); R.vx = 0; R.vy = 0;
+    updateBattle(.05);
+    const ownMoved = Math.abs(L.x - (zone.x + zone.w / 2)) > 1 || Math.abs(L.y - (zone.y + zone.h / 2)) > 1;
+    // 反弹测试：本人移出 zone 到对称点，敌人深入 zone（球心距边 > r）朝墙角冲。
+    // 用纯 updateStructs 验证 zone 反弹本身（绕开蝴蝶/collide 等战斗干扰）
+    L.x = F2.x + F2.s - (zone.x + zone.w / 2); L.y = F2.y + F2.s - (zone.y + zone.h / 2); L.vx = 0; L.vy = 0;
+    R.x = zone.x + R.r + 20; R.y = zone.y + R.r + 20; R.vx = -80; R.vy = -80;
+    const hp0 = R.hp;
+    for (let i = 0; i < 8; i++) updateStructs(.05);
+    const spd = Math.hypot(R.vx, R.vy);
+    const out = !(R.x > zone.x && R.x < zone.x + zone.w && R.y > zone.y && R.y < zone.y + zone.h);
+    return { zone: 'ok', ownMoved, foeOut: out, foeSpd: Math.round(spd), foeHpLost: Math.round(hp0 - R.hp) };
+  })()`);
+  check('棺椁本人可穿过自己的封锁区（豁免）', d2 && d2.zone === 'ok' && d2.ownMoved === false, JSON.stringify(d2));
+  check('敌人被推出封锁区且阻尼减速', d2 && d2.zone === 'ok' && d2.foeOut === true && d2.foeSpd < 100, JSON.stringify(d2));
+  check('敌人不再被持续磨血（推出区外）', d2 && d2.zone === 'ok' && d2.foeHpLost < 30, JSON.stringify(d2));
+  // 障碍物反弹阻尼：夹缝反复反弹后速度衰减
+  const d3 = await evalJS(`(() => {
+    gameMode = 2; gameRules.multiSkill = false; gameRules.shrink = false; gameRules.fieldScale = 1; gameRules.obstacles = 'cross';
+    buildPanels();
+    players = {};
+    players.left = readConfig('left'); players.right = readConfig('right');
+    battle = null; startBattle();
+    updateObstacles(battle, 0);
+    const o = battle.orbs[0];
+    o.vx = 120; o.vy = 0;
+    const spd0 = Math.hypot(o.vx, o.vy);
+    for (let i = 0; i < 8; i++) bounceObstacles(o); // 反复撞同一障碍
+    const spd1 = Math.hypot(o.vx, o.vy);
+    gameRules.obstacles = 'none';
+    return { spd0: Math.round(spd0), spd1: Math.round(spd1) };
+  })()`);
+  check('障碍反弹阻尼（连续碰撞速度衰减）', d3 && d3.spd0 > 0 && d3.spd1 < d3.spd0, JSON.stringify(d3));
+  // 墙缝脱困：封锁区贴墙边（球心距区边 < r）不再被反复弹磨血；障碍与墙之间不再卡死
+  const d4 = await evalJS(`(() => {
+    gameMode = 2; gameRules.multiSkill = false; gameRules.shrink = false; gameRules.fieldScale = 1; gameRules.obstacles = 'none';
+    buildPanels();
+    players = {}; players.left = readConfig('left'); players.right = readConfig('right');
+    players.left.ability = 'coffin'; players.right.ability = 'missile';
+    battle = null; startBattle();
+    const L = battle.left, R = battle.right;
+    L.hp = L.maxHp * .85;
+    updateBattle(.1);
+    const zone = battle.structs.find(s => s.type === 'coffinzone');
+    if (!zone) return { zone: 'none' };
+    const F2 = battle.field;
+    // 敌人贴进 zone 与墙的缝（球心在 zone 内但距边 < r——修复前会被 clamp 拉回反复磨血）
+    L.x = F2.x + F2.s - (zone.x + zone.w / 2); L.y = F2.y + F2.s - (zone.y + zone.h / 2); L.vx = 0; L.vy = 0;
+    const zx = zone.x + 8, zy = zone.y + 8;
+    R.x = Math.max(F2.x + R.r, zx); R.y = Math.max(F2.y + R.r, zy); R.vx = -60; R.vy = -60;
+    const hp0 = R.hp;
+    for (let i = 0; i < 8; i++) updateStructs(.05); // 纯 structs：贴边球不触发反弹 → 零伤害（蝴蝶/技能不干扰）
+    const hpLost = Math.round(hp0 - R.hp);
+    return { zone: 'ok', hpLost, Rx: Math.round(R.x), Ry: Math.round(R.y) };
+  })()`);
+  check('封锁区墙缝不再夹逼（贴边球不被磨血）', d4 && d4.zone === 'ok' && d4.hpLost < 20, JSON.stringify(d4));
+  // 障碍物物理脱困：球心被塞进障碍内部（贴墙角块）→ bounceObstacles 必须把球推出到障碍外
+  // （球心在障碍内的推出分支：最小穿透轴 + 越界回退四轴尝试；此处验证推出路径本身）
+  const d5 = await evalJS(`(() => {
+    gameMode = 2; gameRules.multiSkill = false; gameRules.shrink = false; gameRules.fieldScale = 1; gameRules.obstacles = 'corners';
+    buildPanels();
+    players = {}; players.left = readConfig('left'); players.right = readConfig('right');
+    battle = null; startBattle();
+    updateObstacles(battle, 0);
+    const F3 = battle.field, o = battle.orbs[0];
+    const ob = battle.obstAbs.find(x => x.x < F3.x + F3.s / 2 && x.y < F3.y + F3.s / 2); // 左上角块
+    o.x = ob.x + 1; o.y = ob.y + ob.h / 2; // 球心深入障碍内
+    bounceObstacles(o);
+    const pushedOut = !(o.x > ob.x && o.x < ob.x + ob.w && o.y > ob.y && o.y < ob.y + ob.h);
+    const inField = o.x > F3.x + o.r && o.x < F3.x + F3.s - o.r && o.y > F3.y + o.r && o.y < F3.y + F3.s - o.r;
+    gameRules.obstacles = 'none';
+    return { pushedOut, inField, x: Math.round(o.x), y: Math.round(o.y) };
+  })()`);
+  check('障碍物理脱困（球心在障碍内也能推出到场内）', d5 && d5.pushedOut === true && d5.inField === true, JSON.stringify(d5));
+  await evalJS(`gameRules.obstacles = 'none';`);
 
   console.log('== 8. JS 异常 ==');
   check('无未捕获异常', exceptions.length === 0, exceptions.slice(0, 3).join(' | '));

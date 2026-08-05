@@ -224,6 +224,8 @@ function updateObstacles(B, dt) {
   });
 }
 // 球撞障碍反弹：矩形用最近点法线、线段用垂足法线，反射速度 + 位置推出（与撞墙同构）
+// 位置修正仅当球心深入障碍内部时才执行；球缘接触（球心在外）只反射速度——
+// 避免球被障碍与场地墙之间的窄缝 clamp 拉回死锁（卡进墙缝）
 function bounceObstacles(o) {
   const B = battle;
   if (!B.obstAbs || !B.obstAbs.length) return;
@@ -243,29 +245,37 @@ function bounceObstacles(o) {
         o.x += nx * o.r; o.y += ny * o.r;
       } else {
         nx = ddx / dd; ny = ddy / dd;
-        o.x = px + nx * o.r; o.y = py + ny * o.r;
+        // 只反射不修位置（球心不在杆上，自然移动脱离；防杆贴墙时 clamp 死锁）
       }
     } else {
-      const bx = Math.max(ob.x, Math.min(o.x, ob.x + ob.w));
-      const by = Math.max(ob.y, Math.min(o.y, ob.y + ob.h));
-      const dx = o.x - bx, dy = o.y - by;
-      const d2 = dx * dx + dy * dy;
-      if (d2 >= o.r * o.r) continue;
-      if (d2 < 1e-8) { // 球心在矩形内部：按最小穿透轴推出
+      const inRect = o.x > ob.x && o.x < ob.x + ob.w && o.y > ob.y && o.y < ob.y + ob.h;
+      if (inRect) { // 球心在矩形内部：按最小穿透轴推出；若推出位置越界（障碍贴墙），依次尝试其余轴，保证总能推出到场内
+        const F = fieldRect();
         const l = o.x - ob.x, rr = ob.x + ob.w - o.x, tt = o.y - ob.y, bb = ob.y + ob.h - o.y;
-        const m = Math.min(l, rr, tt, bb);
-        if (m === l) { nx = -1; ny = 0; o.x = ob.x - o.r; }
-        else if (m === rr) { nx = 1; ny = 0; o.x = ob.x + ob.w + o.r; }
-        else if (m === tt) { nx = 0; ny = -1; o.y = ob.y - o.r; }
-        else { nx = 0; ny = 1; o.y = ob.y + ob.h + o.r; }
-      } else {
+        const opts = [
+          { d: l, x: ob.x - o.r, y: o.y, nx: -1, ny: 0 },
+          { d: rr, x: ob.x + ob.w + o.r, y: o.y, nx: 1, ny: 0 },
+          { d: tt, x: o.x, y: ob.y - o.r, nx: 0, ny: -1 },
+          { d: bb, x: o.x, y: ob.y + ob.h + o.r, nx: 0, ny: 1 },
+        ].sort((a, b) => a.d - b.d);
+        const ok = p => p.x >= F.x + o.r && p.x <= F.x + F.s - o.r && p.y >= F.y + o.r && p.y <= F.y + F.s - o.r;
+        const chosen = opts.find(ok) || opts[0];
+        o.x = chosen.x; o.y = chosen.y; nx = chosen.nx; ny = chosen.ny;
+      } else { // 球心在矩形外：球缘接触判定
+        const bx = Math.max(ob.x, Math.min(o.x, ob.x + ob.w));
+        const by = Math.max(ob.y, Math.min(o.y, ob.y + ob.h));
+        const dx = o.x - bx, dy = o.y - by;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= o.r * o.r) continue; // 球缘未接触
+        if (d2 < 1e-9) continue; // 球心恰好贴边：无穿透深度，跳过（防除零）
         const d = Math.sqrt(d2);
         nx = dx / d; ny = dy / d;
-        o.x = bx + nx * o.r; o.y = by + ny * o.r;
+        // 只反射速度不修位置：球心在障碍外，自然移动即可脱离（窄缝中不会被 clamp 拉回障碍内死锁）
       }
     }
     const dot = o.vx * nx + o.vy * ny;
     if (dot < 0) { o.vx -= 2 * dot * nx; o.vy -= 2 * dot * ny; } // 正在靠近才反射
+    o.vx *= .85; o.vy *= .85; // 反弹阻尼：防止被夹在障碍与墙之间的缝隙里反复振荡（轻微减速，不改变弹手感）
   }
 }
 // ---------------- 玩法规则：缩圈 ----------------
@@ -672,11 +682,13 @@ function collide(a, b) {
 function sealCoffinZone(o) {
   const F = fieldRect();
   const h = F.s / 2;
+  // 四象限各内缩 12px：封锁区与场地墙/中线之间留出缝隙，
+  // 敌人被推出后球心落在缝隙里（不越界），不会被 moveOrb 的 clamp 拉回区内死循环夹逼磨血
   const quads = [
-    { x: F.x, y: F.y, w: h, h },          // 左上
-    { x: F.x + h, y: F.y, w: h, h },      // 右上
-    { x: F.x, y: F.y + h, w: h, h },      // 左下
-    { x: F.x + h, y: F.y + h, w: h, h },  // 右下
+    { x: F.x + 12, y: F.y + 12, w: h - 12, h: h - 12 },          // 左上
+    { x: F.x + h, y: F.y + 12, w: h - 12, h: h - 12 },           // 右上
+    { x: F.x + 12, y: F.y + h, w: h - 12, h: h - 12 },           // 左下
+    { x: F.x + h, y: F.y + h, w: h - 12, h: h - 12 },            // 右下
   ];
   const inQuad = (o, q) => o.alive && o.x > q.x + 24 && o.x < q.x + q.w - 24 && o.y > q.y + 24 && o.y < q.y + q.h - 24;
   // 场上已封锁的象限（全局避让：多棺椁互不叠区，防止把全场封死）
@@ -1595,7 +1607,7 @@ function updateBattle(dt) {
       B.structs = B.structs.filter(s => !(s.type === 'zone' && s.kind === 'idol' && s.owner === o.side));
       B.structs.push({ type: 'zone', kind: 'idol', owner: o.side, x: o.x, y: o.y, r: rr, life: .3 });
     }
-    if (hasAb(o, 'drone')) { // 浮游炮常驻三座 + 充能激光
+    if (hasAb(o, 'drone') && o.alive) { // 浮游炮常驻三座 + 充能激光（死后不再补台，炮台随 owner 销毁）
       const ds = B.structs.filter(s => s.type === 'drone' && s.owner === o.side);
       for (let i = ds.length; i < 3; i++) {
         B.structs.push({ type: 'drone', owner: o.side, x: o.x, y: o.y, angle: i * TAU / 3, phase: i * TAU / 3, fireT: rand(0, .5), life: undefined });

@@ -47,7 +47,7 @@ function updateStructs(dt) {
           o.x = s.pair.x; o.y = s.pair.y;
           o.portalCd = 0.6;
           const portalOwner = ownerOf(s.owner);
-          if (portalOwner && !isFoe(o, portalOwner)) { // 我方/队友进入：+10 血，跃迁后 2s 无敌（队伍模式队友同享增益）
+          if (o === portalOwner || (portalOwner && !isFoe(o, portalOwner))) { // 我方/队友进入：+10 血，跃迁后 2s 无敌（混战模式自己须显式判定为"我方"）
             o.hp = Math.min(o.maxHp, o.hp + 10 * BALANCE.global.healMult * o.stats.healMult);
             o.invT = 2;
             addText(o.x, o.y - 40, '+10 跃迁无敌', '#3dff9e', 13);
@@ -291,8 +291,9 @@ function updateStructs(dt) {
         s.dead = true;
       }
     }
-    if (s.type === 'drone') { // 浮游炮
+    if (s.type === 'drone') { // 浮游炮（人死灯灭：owner 出局后炮台随同销毁）
       const owner = ownerOf(s.owner);
+      if (!owner || !owner.alive) { s.dead = true; continue; }
       const foe = nearestFoe(ownerOf(s.owner));
       s.angle += 1.6 * dt;
       s.fireT -= dt;
@@ -539,14 +540,22 @@ function updateStructs(dt) {
       const owner = ownerOf(s.owner);
       if (!owner || !owner.alive) { s.dead = true; continue; } // 人死灯灭：出局后封锁区消散
       for (const o of B.orbs) {
-        if ((owner && !isFoe(o, owner)) || !o.alive || o.invT > 0) continue; // 施放者本人与队友豁免
-        if (o.x > s.x && o.x < s.x + s.w && o.y > s.y && o.y < s.y + s.h) {
-          const dx = o.x - (s.x + s.w / 2), dy = o.y - (s.y + s.h / 2);
-          const d = Math.hypot(dx, dy) || 1;
-          const nx = dx / d, ny = dy / d;
-          o.x += nx * 16; o.y += ny * 16;
+        if (o === owner || (owner && !isFoe(o, owner)) || !o.alive || o.invT > 0) continue; // 施放者本人（混战模式 isFoe 恒 true，须显式排除）与队友豁免
+        // 仅当球体完全进入封锁区（四边各留半径余量）才反弹：
+        // 贴墙被 clamp 住的球（球心距区边 < r）不会触发，可沿边自由滑动，杜绝墙缝夹逼磨血
+        if (o.x > s.x + o.r && o.x < s.x + s.w - o.r && o.y > s.y + o.r && o.y < s.y + s.h - o.r) {
+          // 推出封锁区：沿最近边放到矩形外（球心出界 + 余量），避免被夹在墙缝反复振荡
+          const dl = o.x - s.x, dr = s.x + s.w - o.x, dTop = o.y - s.y, dBot = s.y + s.h - o.y;
+          const m = Math.min(dl, dr, dTop, dBot);
+          if (m === dl) o.x = s.x - o.r - 2;
+          else if (m === dr) o.x = s.x + s.w + o.r + 2;
+          else if (m === dTop) o.y = s.y - o.r - 2;
+          else o.y = s.y + s.h + o.r + 2;
+          // 速度反射 + 阻尼（防振荡：贴墙缝隙中也会快速减速脱困，不再被持续磨血）
+          const nx = dl <= dr ? -1 : 1, ny = dTop <= dBot ? -1 : 1;
           const dot = o.vx * nx + o.vy * ny;
           if (dot < 0) { o.vx -= 2 * dot * nx; o.vy -= 2 * dot * ny; }
+          o.vx *= .55; o.vy *= .55;
           addSparks(o.x, o.y, 3, '#9a9ab0');
           s.hitT -= dt;
           if (s.hitT <= 0) { s.hitT = .5; hitOrb(o, 4, owner, true); }
