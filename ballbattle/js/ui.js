@@ -92,7 +92,7 @@ function drawTransitionStage(t, dur) {
   tctx.clearRect(0, 0, W, H);
   const orbs = transOrbs || [], layout = transLayoutCache || [];
   const p = Math.min(1, t / (dur / 1000 || 1)); // 加载进度 0~1（决定点亮顺序）
-  // 从暗到亮：球 i 在进度 (i+1.1)/(2.2n) 处点亮（4P 约每 1.1s 亮一个，5s 内全部亮起）；
+  // 从暗到亮：球 i 在进度 (i+1.1)/(2.2n) 处点亮（随机模式约每 0.9s 亮一个，5s 内全部亮起）；
   // 点亮瞬间产生 0.45s 高光脉冲（白泛光 + 十字光斑 + 扩散环），随后回落到正常颜色
   const liArr = [], hgArr = [];
   for (let i = 0; i < orbs.length; i++) {
@@ -323,8 +323,16 @@ function startTransition() {
   showScreen('transition');
   const log = $('#trans-log'), fill = $('#trans-fill'), pct = $('#trans-pct');
   log.textContent = ''; fill.style.width = '0%'; pct.textContent = '0%';
-  // 随机模式：10s 长转场（前 5s 老虎机轮转 + 后 5s 定格展示）；手动模式 1.7s
-  const dur = isRandom ? 10000 : 1700;
+  // 随机模式：前 5s 老虎机轮转，最后一个球定格后再展示 3s 开战；手动模式 1.7s
+  // 特写初始化（随机模式：前 5s 高速轮转，逐球在 3.6s 起每 0.32s 错峰定格；
+  // 最后一个球定格后再展示 3s 开战；结果在轮转停止时刻才随机生成）
+  resizeTrans(); // 先定画布尺寸（transW/transH），布局计算依赖它
+  transOrbs = transitionOrbs();
+  transLayoutCache = transLayout(gameMode, transOrbs.length);
+  const stops = transOrbs.map((o, i) => 3600 + i * 320);
+  const lastStop = stops.length ? stops[stops.length - 1] : 3600;
+  const dur = isRandom ? lastStop + 3000 : 1700; // 随机：最后一个球定格后再展示 3s；手动：1.7s 短转场
+  window.__lastTransDur = dur; // 供测试断言转场时长
   const lines = isRandom ? [
     '[ ⚄ ] 随机抽取战斗配置 SHUFFLING .......',
     '[ OK ] 初始化轨道核心 ORB-CORE v2.4 ......',
@@ -339,12 +347,8 @@ function startTransition() {
     '[ OK ] 同步光学传感器 SENSOR-SYNC ........',
     '>>> 战斗协议启动，祝好运',
   ];
-  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * (isRandom ? 1900 : 380)));
-  // 特写初始化（随机模式：前 5s 高速轮转，逐球在 3.6~4.9s 错峰定格；结果在轮转停止时刻才随机生成）
-  resizeTrans(); // 先定画布尺寸（transW/transH），布局计算依赖它
-  transOrbs = transitionOrbs();
-  transLayoutCache = transLayout(gameMode, transOrbs.length);
-  transSlot = isRandom ? transOrbs.map((o, i) => ({ final: null, cur: randomTransOrb(o), stopAt: 3600 + i * 320, stopped: false, stoppedAt: 0 })) : null;
+  lines.forEach((s, i) => setTimeout(() => { if (seq !== transitionSeq) return; log.textContent += s + '\n'; sfx('ui'); }, 120 + i * (isRandom ? Math.max(300, dur / lines.length) : 380)));
+  transSlot = isRandom ? transOrbs.map((o, i) => ({ final: null, cur: randomTransOrb(o), stopAt: stops[i], stopped: false, stoppedAt: 0 })) : null;
   let transRolled = false; // 轮转停止时刻才调用 randomizeAll（结果不预先决定）
   const t0 = performance.now();
   (function step(now) {

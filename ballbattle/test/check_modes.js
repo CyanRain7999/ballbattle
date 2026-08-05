@@ -302,8 +302,12 @@ const check = (name, ok, detail) => {
   check('轮转停止时随机化已发生', rolled.playerChanged === true, JSON.stringify(rolled));
   check('轮转错峰未全部停止（约 3.7s）', rolled.allStopped === false, JSON.stringify(rolled));
   check('定格球为最终配置', rolled.finalized === true, JSON.stringify(rolled));
-  await sleep(6700);
-  check('10 秒转场后开战', await evalJS(`!!battle`));
+  check('转场时长 = 定格后 3s（2P ≈ 6.9s）', await evalJS(`(() => {
+    const d = window.__lastTransDur;
+    return d >= 6000 && d <= 8000 && d === transSlot[transSlot.length - 1].stopAt + 3000;
+  })()`), await evalJS(`window.__lastTransDur`));
+  await sleep(4000); // 定格展示 3s 后开战（≈7.6s 总长；此前已等 3.7s）
+  check('定格展示 3 秒后开战', await evalJS(`!!battle`));
   // 选择屏压缩：能力卡片区限高滚动
   await evalJS(`showScreen('select'); buildPanels();`);
   check('能力卡片区限高滚动', await evalJS(`(() => {
