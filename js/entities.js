@@ -541,20 +541,25 @@ function updateStructs(dt) {
       if (!owner || !owner.alive) { s.dead = true; continue; } // 人死灯灭：出局后封锁区消散
       for (const o of B.orbs) {
         if (o === owner || (owner && !isFoe(o, owner)) || !o.alive || o.invT > 0) continue; // 施放者本人（混战模式 isFoe 恒 true，须显式排除）与队友豁免
-        // 仅当球体完全进入封锁区（四边各留半径余量）才反弹：
-        // 贴墙被 clamp 住的球（球心距区边 < r）不会触发，可沿边自由滑动，杜绝墙缝夹逼磨血
-        if (o.x > s.x + o.r && o.x < s.x + s.w - o.r && o.y > s.y + o.r && o.y < s.y + s.h - o.r) {
-          // 推出封锁区：沿最近边放到矩形外（球心出界 + 余量），避免被夹在墙缝反复振荡
-          const dl = o.x - s.x, dr = s.x + s.w - o.x, dTop = o.y - s.y, dBot = s.y + s.h - o.y;
-          const m = Math.min(dl, dr, dTop, dBot);
-          if (m === dl) o.x = s.x - o.r - 2;
-          else if (m === dr) o.x = s.x + s.w + o.r + 2;
-          else if (m === dTop) o.y = s.y - o.r - 2;
-          else o.y = s.y + s.h + o.r + 2;
+        // 球心进入封锁区（哪怕 1px）即强制推出：修复原"完全进入才反弹"（球心距四边均 > r）导致
+        // 球体可嵌入封锁区半个身位才被弹开的穿模。球心在区外（含墙缝）不触发：贴墙被 clamp 的球
+        // 可沿边自由滑动，杜绝墙缝夹逼磨血
+        if (o.x > s.x && o.x < s.x + s.w && o.y > s.y && o.y < s.y + s.h) {
+          // 推出封锁区：按最小穿透轴选方向，且推出位置必须仍在场内（封锁区贴场地边时，
+          // 越界方向被跳过，避免 moveOrb 的 clamp 把球拉回区内造成死锁振荡）
+          const l = o.x - s.x, rr = s.x + s.w - o.x, tt = o.y - s.y, bb = s.y + s.h - o.y;
+          const opts = [
+            { d: l, x: s.x - o.r - 2, y: o.y, nx: -1, ny: 0 },
+            { d: rr, x: s.x + s.w + o.r + 2, y: o.y, nx: 1, ny: 0 },
+            { d: tt, x: o.x, y: s.y - o.r - 2, nx: 0, ny: -1 },
+            { d: bb, x: o.x, y: s.y + s.h + o.r + 2, nx: 0, ny: 1 },
+          ].sort((a, b) => a.d - b.d);
+          const ok = p => p.x >= F.x + o.r && p.x <= F.x + F.s - o.r && p.y >= F.y + o.r && p.y <= F.y + F.s - o.r;
+          const chosen = opts.find(ok) || opts[0];
+          o.x = chosen.x; o.y = chosen.y;
           // 速度反射 + 阻尼（防振荡：贴墙缝隙中也会快速减速脱困，不再被持续磨血）
-          const nx = dl <= dr ? -1 : 1, ny = dTop <= dBot ? -1 : 1;
-          const dot = o.vx * nx + o.vy * ny;
-          if (dot < 0) { o.vx -= 2 * dot * nx; o.vy -= 2 * dot * ny; }
+          const dot = o.vx * chosen.nx + o.vy * chosen.ny;
+          if (dot < 0) { o.vx -= 2 * dot * chosen.nx; o.vy -= 2 * dot * chosen.ny; }
           o.vx *= .55; o.vy *= .55;
           addSparks(o.x, o.y, 3, '#9a9ab0');
           s.hitT -= dt;

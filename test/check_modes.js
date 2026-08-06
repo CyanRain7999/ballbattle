@@ -283,7 +283,7 @@ const check = (name, ok, detail) => {
   });
   await sleep(2600);
   check('手动转场后开战', await evalJS(`!!battle && battle.orbs.length === 2`));
-  // 随机启动：不预先随机 → 10s 长转场（前 5s 轮转，停止时刻才随机化，后 5s 定格展示）
+  // 随机启动：不预先随机 → 转场（前 ~5s 轮转，逐球错峰定格，最后一个定格后再展示 3s 开战）
   const snap = await evalJS(`JSON.stringify(players)`);
   await evalJS(`(() => {
     startRandomTransition();
@@ -306,7 +306,7 @@ const check = (name, ok, detail) => {
     const d = window.__lastTransDur;
     return d >= 6000 && d <= 8000 && d === transSlot[transSlot.length - 1].stopAt + 3000;
   })()`), await evalJS(`window.__lastTransDur`));
-  await sleep(4000); // 定格展示 3s 后开战（≈7.6s 总长；此前已等 3.7s）
+  await sleep(4000); // 定格展示 3s 后开战（检查点共 7.7s，转场 2P 6.9s，余量充足）
   check('定格展示 3 秒后开战', await evalJS(`!!battle`));
   // 选择屏压缩：能力卡片区限高滚动
   await evalJS(`showScreen('select'); buildPanels();`);
